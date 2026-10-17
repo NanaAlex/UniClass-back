@@ -1,7 +1,7 @@
 import express    from 'express';
 import cors       from 'cors';
 import dotenv     from 'dotenv';
-import rostasAuto from './routes/authRoutes';
+import rotasAuto from './routes/authRoutes';
 
 dotenv.config();
 
@@ -16,7 +16,7 @@ aplicacao.get('/', (req, resp) => {
   resp.json({ message: 'API está rodando' });
 });
 
-aplicacao.use('/auth', rostasAuto);
+aplicacao.use('/auth', rotasAuto);
 
 aplicacao.listen(PORTA, () => {
   console.log(`Server esta rodando em http://localhost:${PORTA}`);
