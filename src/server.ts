@@ -1,28 +1,23 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import authRoutes from './routes/authRoutes';
-import alunosRoutes from './routes/alunosRoutes';
-import chamadasRoutes from './routes/chamadasRoutes';
-import turmasRoutes from './routes/turmasRoutes';
+import express    from 'express';
+import cors       from 'cors';
+import dotenv     from 'dotenv';
+import rostasAuto from './routes/authRoutes';
 
 dotenv.config();
 
-const app = express();
-const PORT = process.env.PORT || 3333;
+const aplicacao = express();
+const PORTA = process.env.PORT || 3333;
 
-app.use(cors());
-app.use(express.json());
-app.use('/alunos', alunosRoutes);
-app.use('/chamadas', chamadasRoutes);
-app.use('/turmas', turmasRoutes);
+aplicacao.use(cors());
+aplicacao.use(express.json());
 
-app.get('/', (req, res) => {
-  res.json({ message: 'API is running 🚀' });
+// -- Rotas
+aplicacao.get('/', (req, resp) => {
+  resp.json({ message: 'API está rodando' });
 });
 
-app.use('/auth', authRoutes);
+aplicacao.use('/auth', rostasAuto);
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+aplicacao.listen(PORTA, () => {
+  console.log(`Server esta rodando em http://localhost:${PORTA}`);
 });
