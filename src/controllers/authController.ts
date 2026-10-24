@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import Jwt  from 'jsonwebtoken';
+import crypto  from 'crypto';
 import pool from '../database/connection';
 
 export async function registro(req: Request, resposta: Response) {
@@ -56,11 +56,14 @@ export async function login(req: Request, resposta: Response) {
       return resposta.status(403).json({ error: 'Conta desativada'});
     }
 
-    // Cria o token
-    const token = Jwt.sign(
-      { id: usuario.id, nivelAcesso: usuario.nivel_acesso },
-      process.env.JWT_SECRET as string,
-      { expiresIn: (process.env.JWT_EXPIRICAO || '1h') as Jwt.SignOptions['expiresIn'] }
+    // Cria sessão
+    const token     = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    await pool.query(
+      `INSERT INTO sessao (id_usuario, token_hash, criado_em, ultimo_acesso, expira_em)
+       VALUES (?, ?, NOW(), NOW(), DATE_ADD(NOW(), INTERVAL 1 HOUR))`,
+      [usuario.id_usuario, tokenHash]
     );
 
     return resposta.json({
