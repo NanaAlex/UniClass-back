@@ -64,3 +64,13 @@ export function somenteProfessor(req: Request, resposta: Response, proximo: Next
 
   return proximo();
 }
+
+export function somenteAdministrador(req: Request, resposta: Response, proximo: NextFunction) {
+  const { tipoUsuario } = resposta.locals.usuario;
+
+  if (tipoUsuario !== 'ADMINISTRADOR') {
+    return resposta.status(403).json({ error: 'Acesso permitido apenas para administradores' });
+  }
+
+  return proximo();
+}
