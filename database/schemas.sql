@@ -213,6 +213,7 @@ CREATE TABLE preferencia_turno (
 CREATE TABLE solicitacao_alteracao_resposta (
   id_solicitacao INT AUTO_INCREMENT PRIMARY KEY,
   id_resposta INT NOT NULL,
+  motivo VARCHAR(500) NOT NULL,
   status ENUM('PENDENTE','APROVADA','REJEITADA') NOT NULL,
   data_solicitacao DATETIME NOT NULL,
   id_admin_analise INT NULL,
