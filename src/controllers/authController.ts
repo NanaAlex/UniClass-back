@@ -108,3 +108,22 @@ export async function usuarioLogado(req: Request, resposta: Response) {
     return resposta.status(500).json({ error: 'Erro ao buscar usuário' });
   }
 }
+
+export async function logout(req: Request, resposta: Response) {
+  const { idSessao } = resposta.locals.usuario;
+
+  try {
+    await pool.query(
+      `UPDATE sessao
+          SET encerrada_em = NOW(),
+              motivo_encerramento = 'LOGOUT'
+        WHERE id_sessao = ?`,
+      [idSessao]
+    );
+
+    return resposta.json({ message: 'Sessão encerrada com sucesso' });
+  } catch (error) {
+    console.error('Erro no logout:', error);
+    return resposta.status(500).json({ error: 'Erro ao encerrar sessão' });
+  }
+}
