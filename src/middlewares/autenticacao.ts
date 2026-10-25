@@ -54,3 +54,13 @@ export async function verificarSessao(req: Request, resposta: Response, proximo:
       return resposta.status(500).json({ error: 'Erro ao verificar sessão' });
     }
 }
+
+export function somenteProfessor(req: Request, resposta: Response, proximo: NextFunction) {
+  const { tipoUsuario } = resposta.locals.usuario;
+
+  if (tipoUsuario !== 'PROFESSOR') {
+    return resposta.status(403).json({ error: 'Acesso permitido apenas para professores' });
+  }
+
+  return proximo();
+}
