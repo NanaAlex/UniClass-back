@@ -193,7 +193,102 @@ export async function enviarResposta(req: Request, resposta: Response) {
           });
         }
 
-        return resposta.status(501).json({ message: 'Validações ok, gravação em construção' });
+        // verificacao de id pertencentes ao formulário
+        const [diasValidos]: any = await pool.query(
+          'SELECT id_dia_letivo, turno FROM dia_letivo WHERE id_admin = ?',
+          [formulario.id_admin]
+        );
+
+        const [slotsValidos]: any = await pool.query(
+          `SELECT s.id_slot, b.turno
+             FROM slot_aula s
+             JOIN bloco_aula b ON b.id_bloco = s.id_bloco
+            WHERE b.id_admin = ?`,
+          [formulario.id_admin]
+        );
+
+        const [materiasValidas]: any = await pool.query(
+          'SELECT id_materia FROM materia WHERE id_semestre = ? AND ativo = TRUE',
+          [formulario.id_semestre]
+        );
+
+        const { disponibilidades, preferenciasTurno, interesses } = req.body;
+
+        const disponibilidadesOk = disponibilidades.every((item: any) => {
+            const dia = diasValidos.find((d: any) => d.id_dia_letivo === item.idDiaLetivo);
+            const slot = slotsValidos.find((s: any) => s.id_slot === item.idSlot);
+            return dia && slot && dia.turno === slot.turno;
+        });
+
+        const preferenciasOk = preferenciasTurno.every((item: any) =>
+            diasValidos.some((d: any) => d.id_dia_letivo === item.idDiaLetivo)
+        );
+
+        const interessesOk = interesses.every((item: any) =>
+            materiasValidas.some((m: any) => m.id_materia === item.idMateria)
+        );
+
+        if (!disponibilidadesOk || !preferenciasOk || !interessesOk) {
+            return resposta.status(400).json({
+            error: 'A resposta contém dias, horários ou matérias que não pertencem a este formulário',
+          });
+        }
+
+         const conexao = await pool.getConnection();
+
+        try {
+            await conexao.beginTransaction();
+
+            let idResposta: number;
+
+            if (respostaExistente) {
+            // Reenvio liberado pelo adm
+                idResposta = respostaExistente.id_resposta;
+
+                await conexao.query(
+                  `UPDATE resposta_formulario
+                      SET status = 'ENVIADA', data_envio = NOW()
+                    WHERE id_resposta = ?`,
+                  [idResposta]
+                );
+
+                await conexao.query('DELETE FROM disponibilidade_horario WHERE id_resposta = ?', [idResposta]);
+                await conexao.query('DELETE FROM preferencia_turno WHERE id_resposta = ?', [idResposta]);
+                await conexao.query('DELETE FROM interesse_materia WHERE id_resposta = ?', [idResposta]);
+            } else {
+                const [resultado]: any = await conexao.query(
+                    `INSERT INTO resposta_formulario (id_formulario, id_professor, data_envio, status)
+                     VALUES (?, ?, NOW(), 'ENVIADA')`,
+                    [idFormulario, id]
+                );
+                idResposta = resultado.insertId;
+            }
+
+            await conexao.query(
+                'INSERT INTO disponibilidade_horario (id_resposta, id_dia_letivo, id_slot, disponivel) VALUES ?',
+                [disponibilidades.map((item: any) => [idResposta, item.idDiaLetivo, item.idSlot, item.disponivel])]
+            );
+
+            await conexao.query(
+                'INSERT INTO preferencia_turno (id_resposta, id_dia_letivo, nota) VALUES ?',
+                [preferenciasTurno.map((item: any) => [idResposta, item.idDiaLetivo, item.nota])]
+            );
+
+            await conexao.query(
+                'INSERT INTO interesse_materia (id_resposta, id_materia, nota_interesse) VALUES ?',
+                [interesses.map((item: any) => [idResposta, item.idMateria, item.nota])]
+            );
+
+            await conexao.commit();
+
+            return resposta.status(201).json({ message: 'Resposta enviada com sucesso', idResposta });
+
+            } catch (erroTransacao) {
+                await conexao.rollback();
+                throw erroTransacao;
+            } finally {
+                conexao.release();
+            }
 
     } catch (error) {
         console.error('Erro ao enviar resposta:', error);
