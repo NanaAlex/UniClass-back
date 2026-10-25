@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import crypto  from 'crypto';
-import pool from '../database/connection';
+import bcrypt                from 'bcryptjs';
+import crypto                from 'crypto';
+import pool                  from '../database/connection';
+import { senhaValida }       from '../utils/validacoes';
 
 export async function registro(req: Request, resposta: Response) {
   const { email, senha } = req.body;
@@ -125,5 +126,61 @@ export async function logout(req: Request, resposta: Response) {
   } catch (error) {
     console.error('Erro no logout:', error);
     return resposta.status(500).json({ error: 'Erro ao encerrar sessão' });
+  }
+}
+
+export async function alterarSenha(req: Request, resposta: Response) {
+  const { id, idSessao } = resposta.locals.usuario;
+  const { senhaAtual, novaSenha, confirmacaoSenha } = req.body;
+
+  if (!senhaAtual || !novaSenha || !confirmacaoSenha) {
+    return resposta.status(400).json({ error: 'Preencha todos os campos' });
+  }
+
+  if (novaSenha !== confirmacaoSenha) {
+    return resposta.status(400).json({ error: 'A confirmação não corresponde à nova senha' });
+  }
+
+  if (!senhaValida(novaSenha)) {
+    return resposta.status(400).json({
+      error: 'A nova senha deve ter no mínimo 8 caracteres, com letra maiúscula, minúscula, número e caractere especial',
+    });
+  }
+
+  try {
+    const [rows]: any = await pool.query(
+      'SELECT senha_hash FROM usuario WHERE id_usuario = ?',
+      [id]
+    );
+
+    const senhaAtualCorreta = await bcrypt.compare(senhaAtual, rows[0].senha_hash);
+
+    if (!senhaAtualCorreta) {
+      return resposta.status(401).json({ error: 'Senha atual incorreta' });
+    }
+
+    // salva nova senha
+    const novoHash = await bcrypt.hash(novaSenha, 10);
+
+    await pool.query(
+      'UPDATE usuario SET senha_hash = ? WHERE id_usuario = ?',
+      [novoHash, id]
+    );
+
+    // Encerra outras sessões
+    await pool.query(
+      `UPDATE sessao
+          SET encerrada_em = NOW(),
+              motivo_encerramento = 'SENHA_ALTERADA'
+        WHERE id_usuario = ?
+          AND id_sessao <> ?
+          AND encerrada_em IS NULL`,
+      [id, idSessao]
+    );
+
+    return resposta.json({ message: 'Senha alterada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao alterar senha:', error);
+    return resposta.status(500).json({ error: 'Erro ao alterar senha' });
   }
 }
