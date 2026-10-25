@@ -82,3 +82,29 @@ export async function login(req: Request, resposta: Response) {
     return resposta.status(500).json({ error: 'Erro ao fazer login' });
   }
 }
+
+export async function usuarioLogado(req: Request, resposta: Response) {
+  const { id } = resposta.locals.usuario;
+
+  try {
+    const [rows]: any = await pool.query(
+      'SELECT id_usuario, nome, email, tipo_usuario FROM usuario WHERE id_usuario = ?',
+      [id]
+    );
+
+    const usuario = rows[0];
+
+    return resposta.json({
+      usuario: {
+        id: usuario.id_usuario,
+        nome: usuario.nome,
+        email: usuario.email,
+        tipoUsuario: usuario.tipo_usuario,
+      },
+    });
+
+  } catch (error) {
+    console.error('Erro ao buscar usuário logado:', error);
+    return resposta.status(500).json({ error: 'Erro ao buscar usuário' });
+  }
+}
