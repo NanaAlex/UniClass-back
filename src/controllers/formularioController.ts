@@ -295,3 +295,86 @@ export async function enviarResposta(req: Request, resposta: Response) {
         return resposta.status(500).json({ error: 'Erro ao enviar resposta' });
     }
 }
+
+export async function verResposta(req: Request, resposta: Response) {
+    const { id } = resposta.locals.usuario;
+    const idFormulario = Number(req.params.idFormulario);
+
+    try {
+        // Verifica de qual professor é a resposta
+        const [respostas]: any = await pool.query(
+          `SELECT r.id_resposta, r.status, r.data_envio, f.nome AS nome_formulario
+             FROM resposta_formulario r
+             JOIN formulario f ON f.id_formulario = r.id_formulario
+            WHERE r.id_formulario = ? AND r.id_professor = ?`,
+          [idFormulario, id]
+        );
+
+        if (respostas.length === 0) {
+          return resposta.status(404).json({ error: 'Você ainda não enviou resposta para este formulário' });
+        }
+
+        const dadosResposta = respostas[0];
+
+        const [disponibilidades]: any = await pool.query(
+          `SELECT dl.dia_semana, dl.turno, b.ordem AS bloco, s.numero_aula,
+                  s.hora_inicio, s.hora_fim, d.disponivel
+             FROM disponibilidade_horario d
+             JOIN dia_letivo dl ON dl.id_dia_letivo = d.id_dia_letivo
+             JOIN slot_aula s   ON s.id_slot = d.id_slot
+             JOIN bloco_aula b  ON b.id_bloco = s.id_bloco
+            WHERE d.id_resposta = ?
+            ORDER BY dl.turno, FIELD(dl.dia_semana, 'SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO'),
+                     b.ordem, s.numero_aula`,
+          [dadosResposta.id_resposta]
+        );
+
+        const [preferencias]: any = await pool.query(
+          `SELECT dl.dia_semana, dl.turno, p.nota
+             FROM preferencia_turno p
+             JOIN dia_letivo dl ON dl.id_dia_letivo = p.id_dia_letivo
+            WHERE p.id_resposta = ?
+            ORDER BY dl.turno, FIELD(dl.dia_semana, 'SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO')`,
+          [dadosResposta.id_resposta]
+        );
+
+        const [interesses]: any = await pool.query(
+          `SELECT m.nome, i.nota_interesse
+             FROM interesse_materia i
+             JOIN materia m ON m.id_materia = i.id_materia
+            WHERE i.id_resposta = ?
+            ORDER BY i.nota_interesse DESC, m.nome`,
+          [dadosResposta.id_resposta]
+        );
+
+        return resposta.json({
+            formulario: dadosResposta.nome_formulario,
+            status: dadosResposta.status,
+            dataEnvio: dadosResposta.data_envio,
+            disponibilidades: disponibilidades.map((item: any) => ({
+                diaSemana: item.dia_semana,
+                turno: item.turno,
+                bloco: item.bloco,
+                aula: item.numero_aula,
+                inicio: item.hora_inicio,
+                fim: item.hora_fim,
+                disponivel: item.disponivel === 1,
+            })),
+
+            preferenciasTurno: preferencias.map((item: any) => ({
+              diaSemana: item.dia_semana,
+              turno: item.turno,
+              nota: item.nota,
+            })),
+
+            interesses: interesses.map((item: any) => ({
+              materia: item.nome,
+              nota: item.nota_interesse,
+            })),
+        });
+
+    } catch (error) {
+      console.error('Erro ao buscar resposta:', error);
+      return resposta.status(500).json({ error: 'Erro ao buscar resposta' });
+    }
+}
