@@ -37,7 +37,7 @@ export async function login(req: Request, resposta: Response) {
 
   try {
     const [rows]: any = await pool.query(
-      'SELECT * FROM usuarios WHERE email = ?',
+      'SELECT * FROM usuario WHERE email = ?',
       [email]
     );
 
@@ -46,7 +46,7 @@ export async function login(req: Request, resposta: Response) {
     }
 
     const usuario = rows[0];
-    const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
+    const senhaCorreta = await bcrypt.compare(senha, usuario.senha_hash);
 
     if (!senhaCorreta) {
       return resposta.status(401).json({ error: 'Email ou senha inválidos' });
@@ -70,14 +70,15 @@ export async function login(req: Request, resposta: Response) {
       message: 'Login realizado com sucesso',
       token,
       usuario: {
-        id: usuario.id,
+        id: usuario.id_usuario,
         nome: usuario.nome,
         email: usuario.email,
-        nivelAcesso: usuario.nivel_acesso,
+        tipoUsuario: usuario.tipo_usuario,
       },
     });
 
   } catch (error) {
+    console.error('Erro no login:', error);
     return resposta.status(500).json({ error: 'Erro ao fazer login' });
   }
 }
