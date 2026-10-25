@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import pool from "../database/connection";
 
+// Confere acesso
 async function buscarFormularioAcessivel(idProfessor: number, idFormulario: number) {
     const [rows]: any = await pool.query(
         `SELECT f.id_formulario, f.nome, f.data_fim, f.id_admin, f.id_semestre
@@ -16,6 +17,36 @@ async function buscarFormularioAcessivel(idProfessor: number, idFormulario: numb
     );
 
   return rows.length > 0 ? rows[0] : null;
+}
+
+function validarCorpoResposta(corpo: any): string | null {
+    const { disponibilidades, preferenciasTurno, interesses } = corpo;
+
+    if (!Array.isArray(disponibilidades) || disponibilidades.length === 0) {
+      return 'Informe sua disponibilidade';
+    }
+    if (!Array.isArray(preferenciasTurno) || preferenciasTurno.length === 0) {
+      return 'Informe a prioridade dos turnos';
+    }
+    if (!Array.isArray(interesses) || interesses.length === 0) {
+      return 'Selecione pelo menos uma matéria';
+    }
+
+    // notas
+    const notaValida = (nota: any) => Number.isInteger(nota) && nota >= 1 && nota <= 5;
+
+    if (!preferenciasTurno.every((item: any) => notaValida(item.nota))) {
+      return 'As notas dos turnos devem ser de 1 a 5';
+    }
+    if (!interesses.every((item: any) => notaValida(item.nota))) {
+      return 'As notas das matérias devem ser de 1 a 5';
+    }
+
+    if (!disponibilidades.every((item: any) => typeof item.disponivel === 'boolean')) {
+      return 'Disponibilidade inválida';
+    }
+
+    return null;
 }
 
 export async function listarFormularios(req: Request, resposta: Response) {
@@ -61,25 +92,11 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
     const idFormulario = Number(req.params.idFormulario);
 
     try {
-        // Confere acesso
-        const [formularios]: any = await pool.query(
-          `SELECT f.id_formulario, f.nome, f.data_fim, f.id_admin, f.id_semestre
-             FROM formulario f
-             JOIN vinculo_professor_admin v
-               ON v.id_admin = f.id_admin
-              AND v.id_professor = ?
-              AND v.ativo = TRUE
-            WHERE f.id_formulario = ?
-              AND f.status = 'ABERTO'
-              AND (f.data_fim IS NULL OR f.data_fim > NOW())`,
-          [id, idFormulario]
-        );
+        const formulario = await buscarFormularioAcessivel(id, idFormulario);
 
-        if (formularios.length === 0) {
-          return resposta.status(404).json({ error: 'Formulário indisponível' });
+        if (!formulario) {
+            return resposta.status(404).json({ error: 'Formulário indisponível' });
         }
-
-        const formulario = formularios[0];
 
         // Dias letivos adm
         const [dias]: any = await pool.query(
@@ -144,4 +161,42 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
           console.error('Erro ao buscar dados do formulário:', error);
           return resposta.status(500).json({ error: 'Erro ao buscar dados do formulário' });
         }
+}
+
+export async function enviarResposta(req: Request, resposta: Response) {
+    const { id } = resposta.locals.usuario;
+    const idFormulario = Number(req.params.idFormulario);
+
+    const erroValidacao = validarCorpoResposta(req.body);
+    if (erroValidacao) {
+      return resposta.status(400).json({ error: erroValidacao });
+    }
+
+    try {
+        const formulario = await buscarFormularioAcessivel(id, idFormulario);
+        if (!formulario) {
+          return resposta.status(404).json({ error: 'Formulário indisponível' });
+        }
+
+        const [respostas]: any = await pool.query(
+            `SELECT id_resposta, status
+               FROM resposta_formulario
+              WHERE id_formulario = ? AND id_professor = ?`,
+            [idFormulario, id]
+        );
+
+        const respostaExistente = respostas.length > 0 ? respostas[0] : null;
+
+        if (respostaExistente && respostaExistente.status !== 'LIBERADA_PARA_ALTERACAO') {
+          return resposta.status(409).json({
+            error: 'Você já respondeu este formulário. Para alterar, envie uma solicitação.',
+          });
+        }
+
+        return resposta.status(501).json({ message: 'Validações ok, gravação em construção' });
+
+    } catch (error) {
+        console.error('Erro ao enviar resposta:', error);
+        return resposta.status(500).json({ error: 'Erro ao enviar resposta' });
+    }
 }

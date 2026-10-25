@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { listarFormularios, dadosDoFormulario} from "../controllers/formularioController";
-import { verificarSessao, somenteProfessor }   from "../middlewares/autenticacao";
+import { listarFormularios, dadosDoFormulario, enviarResposta} from "../controllers/formularioController";
+import { verificarSessao, somenteProfessor }                   from "../middlewares/autenticacao";
 
 const router = Router();
 
@@ -10,5 +10,6 @@ router.use(verificarSessao, somenteProfessor);
 //forms
 router.get('/formularios', listarFormularios);
 router.get('/formularios/:idFormulario', dadosDoFormulario);
+router.post('/formularios/:idFormulario/resposta', enviarResposta);
 
 export default router;
