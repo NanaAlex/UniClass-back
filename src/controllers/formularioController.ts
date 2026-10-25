@@ -1,6 +1,23 @@
 import { Request, Response } from "express";
 import pool from "../database/connection";
 
+async function buscarFormularioAcessivel(idProfessor: number, idFormulario: number) {
+    const [rows]: any = await pool.query(
+        `SELECT f.id_formulario, f.nome, f.data_fim, f.id_admin, f.id_semestre
+             FROM formulario f
+             JOIN vinculo_professor_admin v
+               ON v.id_admin = f.id_admin
+              AND v.id_professor = ?
+              AND v.ativo = TRUE
+            WHERE f.id_formulario = ?
+              AND f.status = 'ABERTO'
+              AND (f.data_fim IS NULL OR f.data_fim > NOW())`,
+        [idProfessor, idFormulario]
+    );
+
+  return rows.length > 0 ? rows[0] : null;
+}
+
 export async function listarFormularios(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
 
