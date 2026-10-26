@@ -66,3 +66,35 @@ export async function solicitarAlteracaoFormulario(req: Request, resposta: Respo
         return resposta.status(500).json({ error: 'Erro ao enviar solicitação' });
     }
 }
+
+export async function listarSolicitacoesFormulario(req: Request, resposta: Response) {
+    const { id } = resposta.locals.usuario;
+
+    try {
+        const [rows]: any = await pool.query(
+            `SELECT s.id_solicitacao, s.motivo, s.status, s.data_solicitacao, s.data_analise,
+                    f.id_formulario, f.nome AS nome_formulario
+               FROM solicitacao_alteracao_resposta s
+               JOIN resposta_formulario r ON r.id_resposta = s.id_resposta
+               JOIN formulario f          ON f.id_formulario = r.id_formulario
+              WHERE r.id_professor = ?
+              ORDER BY s.data_solicitacao DESC`,
+            [id]
+        );
+
+        const solicitacoes = rows.map((linha: any) => ({
+          id: linha.id_solicitacao,
+          idFormulario: linha.id_formulario,
+          formulario: linha.nome_formulario,
+          motivo: linha.motivo,
+          status: linha.status,
+          dataSolicitacao: linha.data_solicitacao,
+          dataAnalise: linha.data_analise,
+        }));
+
+        return resposta.json({ solicitacoes });
+    } catch (error) {
+        console.error('Erro ao listar solicitações:', error);
+        return resposta.status(500).json({ error: 'Erro ao listar solicitações' });
+    }
+}
