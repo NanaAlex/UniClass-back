@@ -3,6 +3,7 @@ import cors           from 'cors';
 import dotenv         from 'dotenv';
 import rotasAuto      from './routes/authRoutes';
 import rotasProfessor from './routes/professorRoutes';
+import rotasAdmin     from './routes/adminRoutes';
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ aplicacao.get('/', (req, resp) => {
 
 aplicacao.use('/auth', rotasAuto);
 aplicacao.use('/professor', rotasProfessor);
+aplicacao.use('/admin', rotasAdmin);
 
 aplicacao.listen(PORTA, () => {
   console.log(`Server esta rodando em http://localhost:${PORTA}`);
