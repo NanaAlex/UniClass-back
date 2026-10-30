@@ -12,7 +12,7 @@ async function buscarAulasDoProfessor(idProfessor: number, status: 'PREVIA' | 'D
     const filtroPrevia = status === 'PREVIA' ? 'AND s.previas_visiveis = 1' : '';
 
     const [aulas]: any = await pool.query(
-      `SELECT a.id_aula, g.numero_versao, s.nome AS semestre, s.periodo_letivo,
+      `SELECT a.id_aula, g.id_geracao, g.numero_versao, s.nome AS semestre, s.periodo_letivo,
               t.nome AS turma, m.nome AS materia,
               d.dia_semana, d.turno, b.ordem AS bloco, sl.numero_aula,
               TIME_FORMAT(sl.hora_inicio, '%H:%i') AS inicio,
@@ -36,6 +36,7 @@ async function buscarAulasDoProfessor(idProfessor: number, status: 'PREVIA' | 'D
 
     return aulas.map((aula: any) => ({
       idAula:        aula.id_aula,
+      idGeracao:     aula.id_geracao,
       versao:        aula.numero_versao,
       semestre:      aula.semestre,
       periodoLetivo: aula.periodo_letivo,
