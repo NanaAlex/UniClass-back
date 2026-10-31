@@ -98,3 +98,130 @@ export async function listarSolicitacoesFormulario(req: Request, resposta: Respo
         return resposta.status(500).json({ error: 'Erro ao listar solicitações' });
     }
 }
+
+/* 
+  Professor pede alteração na prévia do horário (CU-053)
+*/
+
+export async function solicitarAlteracaoHorario(req: Request, resposta: Response) {
+  try {
+    const { id } = resposta.locals.usuario;
+    const { idGeracao, idAula, motivo } = req.body;
+
+    if (typeof motivo !== 'string' || motivo.trim() === '') {
+      return resposta.status(400).json({ error: 'Informe o motivo da solicitação' });
+    }
+    if (motivo.trim().length > 500) {
+      return resposta.status(400).json({ error: 'O motivo pode ter no máximo 500 caracteres' });
+    }
+    if (!Number.isInteger(idGeracao)) {
+      return resposta.status(400).json({ error: 'Informe o horário (idGeracao) da solicitação' });
+    }
+    if (idAula !== undefined && idAula !== null && !Number.isInteger(idAula)) {
+      return resposta.status(400).json({ error: 'A aula informada é inválida' });
+    }
+
+    const aulaInformada = Number.isInteger(idAula) ? idAula : null;
+
+    const [geracoes]: any = await pool.query(
+      `SELECT g.id_geracao
+         FROM geracao_horario g
+         JOIN semestre s                ON s.id_semestre = g.id_semestre
+         JOIN vinculo_professor_admin v ON v.id_admin    = s.id_admin
+        WHERE g.id_geracao = ?
+          AND g.status = 'PREVIA'
+          AND s.ativo = 1
+          AND s.previas_visiveis = 1
+          AND v.id_professor = ?
+          AND v.ativo = 1`,
+      [idGeracao, id]
+    );
+
+    if (geracoes.length === 0) {
+      return resposta.status(404).json({ error: 'Prévia de horário não encontrada ou não liberada' });
+    }
+
+
+    if (aulaInformada !== null) {
+      const [aulas]: any = await pool.query(
+        'SELECT id_aula FROM aula_alocada WHERE id_aula = ? AND id_geracao = ? AND id_professor = ?',
+        [aulaInformada, idGeracao, id]
+      );
+      if (aulas.length === 0) {
+        return resposta.status(400).json({ error: 'A aula informada não pertence ao seu horário nesta prévia' });
+      }
+    }
+
+    const [pendentes]: any = await pool.query(
+      `SELECT id_solicitacao
+         FROM solicitacao_alteracao_horario
+        WHERE id_professor = ? AND id_geracao = ? AND id_aula <=> ? AND status = 'PENDENTE'`,
+      [id, idGeracao, aulaInformada]
+    );
+    if (pendentes.length > 0) {
+      return resposta.status(409).json({ error: 'Você já tem uma solicitação pendente para esta aula' });
+    }
+
+    const [resultado]: any = await pool.query(
+      `INSERT INTO solicitacao_alteracao_horario (id_professor, id_geracao, id_aula, motivo, data_envio, status)
+       VALUES (?, ?, ?, ?, NOW(), 'PENDENTE')`,
+      [id, idGeracao, aulaInformada, motivo.trim()]
+    );
+
+    return resposta.status(201).json({
+      message: 'Solicitação enviada com sucesso',
+      idSolicitacao: resultado.insertId,
+    });
+  } catch (error) {
+    console.error('Erro ao solicitar alteração do horário:', error);
+    return resposta.status(500).json({ error: 'Erro ao solicitar alteração do horário' });
+  }
+}
+
+/*
+   Lista os pedidos de alteração do horário do professor
+   (CU-054). LEFT JOIN porque o pedido pode não ter aula 
+*/
+
+export async function listarSolicitacoesHorario(req: Request, resposta: Response) {
+  try {
+    const { id } = resposta.locals.usuario;
+
+    const [linhas]: any = await pool.query(
+      `SELECT sh.id_solicitacao, sh.id_geracao, g.numero_versao, s.nome AS semestre,
+              sh.id_aula, m.nome AS materia, d.dia_semana, sl.numero_aula,
+              sh.motivo, sh.status, sh.data_envio
+         FROM solicitacao_alteracao_horario sh
+         JOIN geracao_horario g   ON g.id_geracao     = sh.id_geracao
+         JOIN semestre s          ON s.id_semestre    = g.id_semestre
+         LEFT JOIN aula_alocada a ON a.id_aula        = sh.id_aula
+         LEFT JOIN materia m      ON m.id_materia     = a.id_materia
+         LEFT JOIN dia_letivo d   ON d.id_dia_letivo  = a.id_dia_letivo
+         LEFT JOIN slot_aula sl   ON sl.id_slot       = a.id_slot
+        WHERE sh.id_professor = ?
+        ORDER BY sh.data_envio DESC`,
+      [id]
+    );
+
+    const solicitacoes = linhas.map((linha: any) => ({
+      id:        linha.id_solicitacao,
+      idGeracao: linha.id_geracao,
+      versao:    linha.numero_versao,
+      semestre:  linha.semestre,
+      aula: linha.id_aula === null ? null : {
+        idAula:  linha.id_aula,
+        materia: linha.materia,
+        dia:     linha.dia_semana,
+        aula:    linha.numero_aula,
+      },
+      motivo:    linha.motivo,
+      status:    linha.status,
+      dataEnvio: linha.data_envio,
+    }));
+
+    return resposta.json({ solicitacoes });
+  } catch (error) {
+    console.error('Erro ao listar solicitações do horário:', error);
+    return resposta.status(500).json({ error: 'Erro ao listar solicitações do horário' });
+  }
+}
