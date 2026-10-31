@@ -3,6 +3,7 @@ import { verificarSessao, somenteAdministrador } from "../middlewares/autenticac
 import { listarBlocos, criarBloco, editarBloco, alterarTamanhoBlocos, excluirBloco } from "../controllers/blocoController";
 import { listarDias, adicionarDia, excluirDia }                                      from "../controllers/diaLetivoController";
 import { listarSemestres, criarSemestre, excluirSemestre }                           from "../controllers/semestreController";
+import { adicionarTurma, alterarTurnoTurma, retirarTurma }                          from "../controllers/turmaController";
 
 const router = Router();
 
@@ -16,17 +17,19 @@ router.delete('/dias/:idDiaLetivo', excluirDia);
 
 // blocos de aulas
 router.get('/turnos/:turno/blocos', listarBlocos);
-
 router.post('/turnos/:turno/blocos', criarBloco);
-
 router.put('/turnos/:turno/blocos/tamanho', alterarTamanhoBlocos);
 router.put('/blocos/:idBloco', editarBloco);
-
 router.delete('/blocos/:idBloco', excluirBloco);
 
 // semestres
 router.get('/semestres', listarSemestres);
 router.post('/semestres', criarSemestre);
 router.delete('/semestres/:idSemestre', excluirSemestre);
+
+// turmas do semestre
+router.post('/semestres/:idSemestre/turmas', adicionarTurma);
+router.put('/turmas/:idTurma', alterarTurnoTurma);
+router.delete('/turmas/:idTurma', retirarTurma);
 
 export default router;

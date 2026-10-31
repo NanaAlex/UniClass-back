@@ -102,8 +102,9 @@ CREATE TABLE turma (
   id_turma INT AUTO_INCREMENT PRIMARY KEY,
   id_semestre INT NOT NULL,
   nome VARCHAR(255) NOT NULL,
-  turno ENUM('MATUTINO','VERSPERTINO','NOTURNO','INTEGRAL') NOT NULL,
+  turno ENUM('MANHA','TARDE','NOITE') NOT NULL,
   ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  UNIQUE KEY uq_turma_nome (id_semestre, nome),
   CONSTRAINT fk_turma_semestre FOREIGN KEY (id_semestre) REFERENCES semestre(id_semestre)
 ) ENGINE=InnoDB;
 
@@ -113,7 +114,7 @@ CREATE TABLE materia (
   nome VARCHAR(255) NOT NULL,
   qtd_aulas_semana INT NOT NULL,
   qtd_professores INT NOT NULL,
-  turno ENUM('MANHA','TARDE','NOITE','INTEGRAL') NOT NULL,
+  turno ENUM('MANHA','TARDE','NOITE') NOT NULL,
   ativo BOOLEAN NOT NULL DEFAULT TRUE,
   CONSTRAINT fk_materia_semestre FOREIGN KEY (id_semestre) REFERENCES semestre(id_semestre)
 ) ENGINE=InnoDB;
@@ -122,7 +123,7 @@ CREATE TABLE dia_letivo (
   id_dia_letivo INT AUTO_INCREMENT PRIMARY KEY,
   id_admin INT NOT NULL,
   dia_semana ENUM('SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO') NOT NULL,
-  turno ENUM('MANHA','TARDE','NOITE','INTEGRAL') NOT NULL,
+  turno ENUM('MANHA','TARDE','NOITE') NOT NULL,
   UNIQUE KEY uq_dia_letivo (id_admin, dia_semana, turno),
   CONSTRAINT fk_dia_letivo_admin FOREIGN KEY (id_admin) REFERENCES administrador(id_usuario)
 ) ENGINE=InnoDB;
@@ -130,7 +131,7 @@ CREATE TABLE dia_letivo (
 CREATE TABLE bloco_aula (
   id_bloco INT AUTO_INCREMENT PRIMARY KEY,
   id_admin INT NOT NULL,
-  turno ENUM('MANHA','TARDE','NOITE','INTEGRAL') NOT NULL,
+  turno ENUM('MANHA','TARDE','NOITE') NOT NULL,
   ordem INT NOT NULL,
   qtd_aulas INT NOT NULL,
   hora_inicio TIME NOT NULL,
