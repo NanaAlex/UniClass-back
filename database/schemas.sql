@@ -114,8 +114,9 @@ CREATE TABLE materia (
   nome VARCHAR(255) NOT NULL,
   qtd_aulas_semana INT NOT NULL,
   qtd_professores INT NOT NULL,
-  turno ENUM('MANHA','TARDE','NOITE') NOT NULL,
+  turno ENUM('MANHA','TARDE','NOITE') NULL,
   ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  UNIQUE KEY uq_materia_nome (id_semestre, nome),
   CONSTRAINT fk_materia_semestre FOREIGN KEY (id_semestre) REFERENCES semestre(id_semestre)
 ) ENGINE=InnoDB;
 
@@ -158,7 +159,7 @@ CREATE TABLE slot_aula (
 CREATE TABLE formulario (
   id_formulario INT AUTO_INCREMENT PRIMARY KEY,
   id_admin INT NOT NULL,
-  id_semestre INT NOT NULL,
+  id_semestre INT NULL,
   nome VARCHAR(255) NOT NULL,
   data_inicio DATETIME NULL,
   data_fim DATETIME NULL,
