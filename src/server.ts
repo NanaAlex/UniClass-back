@@ -4,6 +4,7 @@ import dotenv         from 'dotenv';
 import rotasAuto      from './routes/authRoutes';
 import rotasProfessor from './routes/professorRoutes';
 import rotasAdmin     from './routes/adminRoutes';
+import { iniciarAgendaFormularios } from './utils/agendaFormulario';
 
 dotenv.config();
 
@@ -24,4 +25,5 @@ aplicacao.use('/admin', rotasAdmin);
 
 aplicacao.listen(PORTA, () => {
   console.log(`Server esta rodando em http://localhost:${PORTA}`);
+  iniciarAgendaFormularios();
 });

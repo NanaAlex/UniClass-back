@@ -18,12 +18,32 @@ async function montarSemestres(idAdmin: number) {
         [idAdmin]
     );
 
+    // CU-019: turmas de todos os semestres numa consulta so, agrupadas abaixo
+    const [turmas]: any = await pool.query(
+        `SELECT t.id_turma, t.id_semestre, t.nome, t.turno,
+                (EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_turma = t.id_turma)
+                 OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_turma = t.id_turma)) AS em_uso
+           FROM turma t
+           JOIN semestre s ON s.id_semestre = t.id_semestre
+          WHERE s.id_admin = ?
+          ORDER BY t.nome`,
+        [idAdmin]
+    );
+
     return rows.map((linha: any, i: number) => ({
         id: linha.id_semestre,
         numero: i + 1,
         nome: linha.nome,
         periodoLetivo: linha.periodo_letivo,
         emUso: linha.em_uso === 1,
+        turmas: turmas
+            .filter((turma: any) => turma.id_semestre === linha.id_semestre)
+            .map((turma: any) => ({
+                id: turma.id_turma,
+                nome: turma.nome,
+                turno: turma.turno,
+                emUso: turma.em_uso === 1,
+            })),
     }));
 }
 
