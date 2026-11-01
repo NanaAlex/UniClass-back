@@ -7,7 +7,7 @@ import { listarSemestres, criarSemestre, excluirSemestre }                      
 import { adicionarTurma, alterarTurnoTurma, retirarTurma }                          from "../controllers/turmaController";
 import { listarMaterias, criarMateria, editarMateria, excluirMateria }              from "../controllers/materiaController";
 import { listarFormulariosDoAdmin, lancarFormulario, editarDatasFormulario,
-         abrirFormulario, encerrarFormulario }                                      from "../controllers/publicacaoController"
+         abrirFormulario, encerrarFormulario, listarProfessoresDoFormulario }                                      from "../controllers/publicacaoController"
 
 
 const router = Router();
@@ -49,5 +49,6 @@ router.post('/formularios', lancarFormulario);
 router.put('/formularios/:idFormulario/datas', editarDatasFormulario);
 router.post('/formularios/:idFormulario/abrir', abrirFormulario);
 router.post('/formularios/:idFormulario/encerrar', encerrarFormulario);
+router.get('/formularios/:idFormulario/professores', listarProfessoresDoFormulario);
 
 export default router;

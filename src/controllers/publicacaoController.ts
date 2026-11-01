@@ -318,3 +318,63 @@ export async function encerrarFormulario(req: Request, resposta: Response) {
         return resposta.status(500).json({ error: 'Erro interno ao encerrar o formulário' });
     }
 }
+
+// Filtro da lista de professores: CU-027 (responderam) e CU-028 (pendentes)
+const SITUACOES: Record<string, string> = {
+    responderam: 'AND r.id_resposta IS NOT NULL',
+    pendentes: 'AND r.id_resposta IS NULL',
+};
+
+// CU-027 e CU-028: lista da tela "Formulario Criado" ("Nome do professor que
+// respondeu" e "Data da resposta") e o filtro de quem ainda nao respondeu
+export async function listarProfessoresDoFormulario(req: Request, resposta: Response) {
+    const { id } = resposta.locals.usuario;
+    const situacao = req.query.situacao;
+
+    // So as chaves proprias: "constructor" e afins nao sao filtros
+    if (situacao !== undefined && (typeof situacao !== 'string' || !Object.prototype.hasOwnProperty.call(SITUACOES, situacao))) {
+      return resposta.status(400).json({ error: 'Filtro de situação inválido; use responderam ou pendentes' });
+    }
+
+    try {
+        const formulario = await buscarFormularioDoAdmin(id, Number(req.params.idFormulario));
+
+        if (!formulario) {
+          return resposta.status(404).json({ error: 'Formulário não encontrado' });
+        }
+
+        // Vinculados ao admin, mais quem respondeu e depois foi desvinculado
+        const [rows]: any = await pool.query(
+            `SELECT u.id_usuario, u.nome, r.status AS status_resposta,
+                    DATE_FORMAT(r.data_envio, '%Y-%m-%dT%H:%i:%s') AS data_envio
+               FROM (SELECT v.id_professor
+                       FROM vinculo_professor_admin v
+                      WHERE v.id_admin = ? AND v.ativo = TRUE
+                     UNION
+                     SELECT rf.id_professor
+                       FROM resposta_formulario rf
+                      WHERE rf.id_formulario = ?) p
+               JOIN usuario u ON u.id_usuario = p.id_professor
+               LEFT JOIN resposta_formulario r
+                 ON r.id_formulario = ? AND r.id_professor = p.id_professor
+              WHERE TRUE ${situacao ? SITUACOES[situacao as string] : ''}
+              ORDER BY u.nome`,
+            [id, formulario.id_formulario, formulario.id_formulario]
+        );
+
+        return resposta.json({
+            idFormulario: formulario.id_formulario,
+            situacao: situacao ?? 'todos',
+            professores: rows.map((linha: any) => ({
+                id: linha.id_usuario,
+                nome: linha.nome,
+                respondeu: linha.status_resposta !== null,
+                dataEnvio: linha.data_envio,
+                statusResposta: linha.status_resposta,
+            })),
+        });
+    } catch (error) {
+        console.error('Erro ao listar professores do formulário:', error);
+        return resposta.status(500).json({ error: 'Erro interno ao listar os professores do formulário' });
+    }
+}
