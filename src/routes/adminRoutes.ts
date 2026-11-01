@@ -7,7 +7,7 @@ import { listarSemestres, criarSemestre, excluirSemestre }                      
 import { adicionarTurma, alterarTurnoTurma, retirarTurma }                          from "../controllers/turmaController";
 import { listarMaterias, criarMateria, editarMateria, excluirMateria }              from "../controllers/materiaController";
 import { listarFormulariosDoAdmin, lancarFormulario, editarDatasFormulario,
-         abrirFormulario, encerrarFormulario }                                      from "../controllers/publicacaoController";
+         abrirFormulario, encerrarFormulario }                                      from "../controllers/publicacaoController"
 
 
 const router = Router();

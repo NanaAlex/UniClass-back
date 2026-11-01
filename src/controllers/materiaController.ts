@@ -63,7 +63,8 @@ async function semestreDoAdmin(idAdmin: number, idSemestre: number) {
 
 const quantidadeValida = (valor: any) => Number.isInteger(valor) && valor >= 1 && valor <= 99;
 
-// Formato do cadastro e da edicao, sem banco (CU-020 A1, CU-021 A2)
+// Formato do cadastro e da edicao
+
 function validarCorpoMateria(corpo: any) {
     const nome = typeof corpo?.nome === 'string' ? corpo.nome.trim() : '';
     const { qtdAulasSemana, qtdProfessores, idSemestre } = corpo ?? {};
@@ -87,7 +88,7 @@ function validarCorpoMateria(corpo: any) {
     return { dados: { nome, qtdAulasSemana, qtdProfessores, idSemestre } };
 }
 
-// CU-021 e CU-022: lista, com filtro opcional ?semestres=1,3
+// Lista, com filtro opcional ? semestres=1,3
 export async function listarMaterias(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
     const filtro = req.query.semestres;
@@ -106,7 +107,7 @@ export async function listarMaterias(req: Request, resposta: Response) {
     }
 }
 
-// CU-020: botao "Criar" da secao de disciplinas
+// Botao "Criar" da secao de disciplinas
 export async function criarMateria(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
     const { erro, dados } = validarCorpoMateria(req.body);
@@ -143,7 +144,7 @@ export async function criarMateria(req: Request, resposta: Response) {
     }
 }
 
-// CU-021: edita todos os campos do cadastro
+// Edita todos os campos do cadastro
 export async function editarMateria(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
     const { erro, dados } = validarCorpoMateria(req.body);
@@ -191,7 +192,7 @@ export async function editarMateria(req: Request, resposta: Response) {
     }
 }
 
-// CU-021: botao "Deletar"
+// Botao "Deletar"
 export async function excluirMateria(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
 
@@ -202,7 +203,6 @@ export async function excluirMateria(req: Request, resposta: Response) {
           return resposta.status(404).json({ error: 'Disciplina não encontrada' });
         }
 
-        // CU-021 A1
         if (materia.em_uso === 1) {
           return resposta.status(409).json({
             error: 'Esta disciplina já é usada em respostas de professores ou em horários e não pode ser excluída',
