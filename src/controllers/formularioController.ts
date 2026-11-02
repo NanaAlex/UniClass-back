@@ -316,6 +316,21 @@ export async function verResposta(req: Request, resposta: Response) {
 
         const dadosResposta = respostas[0];
 
+        return resposta.json({
+            formulario: dadosResposta.nome_formulario,
+            status: dadosResposta.status,
+            dataEnvio: dadosResposta.data_envio,
+            ...(await montarDetalhesResposta(dadosResposta.id_resposta)),
+        });
+
+    } catch (error) {
+      console.error('Erro ao buscar resposta:', error);
+      return resposta.status(500).json({ error: 'Erro ao buscar resposta' });
+    }
+}
+
+// Disponibilidades, preferencias e interesses de uma resposta (usado pelo professor e pelo admin)
+export async function montarDetalhesResposta(idResposta: number) {
         const [disponibilidades]: any = await pool.query(
           `SELECT dl.dia_semana, dl.turno, b.ordem AS bloco, s.numero_aula,
                   s.hora_inicio, s.hora_fim, d.disponivel
@@ -326,7 +341,7 @@ export async function verResposta(req: Request, resposta: Response) {
             WHERE d.id_resposta = ?
             ORDER BY dl.turno, FIELD(dl.dia_semana, 'SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO'),
                      b.ordem, s.numero_aula`,
-          [dadosResposta.id_resposta]
+          [idResposta]
         );
 
         const [preferencias]: any = await pool.query(
@@ -335,7 +350,7 @@ export async function verResposta(req: Request, resposta: Response) {
              JOIN dia_letivo dl ON dl.id_dia_letivo = p.id_dia_letivo
             WHERE p.id_resposta = ?
             ORDER BY dl.turno, FIELD(dl.dia_semana, 'SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO')`,
-          [dadosResposta.id_resposta]
+          [idResposta]
         );
 
         const [interesses]: any = await pool.query(
@@ -344,13 +359,10 @@ export async function verResposta(req: Request, resposta: Response) {
              JOIN materia m ON m.id_materia = i.id_materia
             WHERE i.id_resposta = ?
             ORDER BY i.nota_interesse DESC, m.nome`,
-          [dadosResposta.id_resposta]
+          [idResposta]
         );
 
-        return resposta.json({
-            formulario: dadosResposta.nome_formulario,
-            status: dadosResposta.status,
-            dataEnvio: dadosResposta.data_envio,
+        return {
             disponibilidades: disponibilidades.map((item: any) => ({
                 diaSemana: item.dia_semana,
                 turno: item.turno,
@@ -371,10 +383,5 @@ export async function verResposta(req: Request, resposta: Response) {
               materia: item.nome,
               nota: item.nota_interesse,
             })),
-        });
-
-    } catch (error) {
-      console.error('Erro ao buscar resposta:', error);
-      return resposta.status(500).json({ error: 'Erro ao buscar resposta' });
-    }
+        };
 }
