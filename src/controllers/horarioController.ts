@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection';
 
-/* 
+/*
    Função interna: busca as aulas do professor no horário
    - status 'PREVIA'     -> só semestres com prévia liberada
    - status 'DEFINITIVO' -> horário oficial publicado
@@ -57,33 +57,33 @@ export async function buscarAulasDoProfessor(idProfessor: number, status: 'PREVI
 }
 
 export async function verPreviaHorario(req: Request, resposta: Response) {
-    try {
-        const { id } = resposta.locals.usuario;
-        const aulas = await buscarAulasDoProfessor(id, 'PREVIA');
+  try {
+    const { id } = resposta.locals.usuario;
+    const aulas = await buscarAulasDoProfessor(id, 'PREVIA');
 
-    // Nenhuma aula: a prévia não existe ou ainda não foi liberada
     if (aulas.length === 0) {
       return resposta.status(404).json({ error: 'Nenhuma prévia de horário disponível no momento' });
     }
 
     return resposta.json({ aulas });
-
-    } catch (error) {
-        console.error('Erro ao buscar prévia do horário:', error);
-        return resposta.status(500).json({ error: 'Erro ao buscar prévia do horário' });
-    }
+  
+  } catch (error) {
+    console.error('Erro ao buscar prévia do horário:', error);
+    return resposta.status(500).json({ error: 'Erro ao buscar prévia do horário' });
+  }
 }
-
 export async function verHorarioDefinitivo(req: Request, resposta: Response) {
   try {
     const { id } = resposta.locals.usuario;
     const aulas = await buscarAulasDoProfessor(id, 'DEFINITIVO');
 
+    // Nenhuma aula: o horário definitivo ainda não foi publicado
     if (aulas.length === 0) {
       return resposta.status(404).json({ error: 'O horário definitivo ainda não foi publicado' });
     }
 
     return resposta.json({ aulas });
+  
   } catch (error) {
     console.error('Erro ao buscar horário definitivo:', error);
     return resposta.status(500).json({ error: 'Erro ao buscar horário definitivo' });

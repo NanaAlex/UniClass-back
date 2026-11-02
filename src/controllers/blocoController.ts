@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection';
+import { TURNOS } from '../utils/validacoes';
 
-const TURNOS = ['MANHA', 'TARDE', 'NOITE', 'INTEGRAL'];
 const MINUTOS_NO_DIA = 24 * 60;
 
 // 'HH:MM' ou 'HH:MM:SS' (TIME do MySQL) -> minutos desde 00:00

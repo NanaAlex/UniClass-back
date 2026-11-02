@@ -159,7 +159,7 @@ export async function solicitarAlteracaoHorario(req: Request, resposta: Response
       [id, idGeracao, aulaInformada]
     );
     if (pendentes.length > 0) {
-      return resposta.status(409).json({ error: 'Você já tem uma solicitação pendente para esta aula' });
+      return resposta.status(409).json({ error: 'Você já tem uma solicitação pendente igual a esta' });
     }
 
     const [resultado]: any = await pool.query(

@@ -9,4 +9,5 @@ export const emailValido = (email: string): boolean =>
   email.length <= 255 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 // Turnos aceitos em dia_letivo, bloco_aula e materia
+// Turnos aceitos pela API (dias letivos, blocos e turmas), os mesmos do ENUM do banco
 export const TURNOS = ['MANHA', 'TARDE', 'NOITE'];
