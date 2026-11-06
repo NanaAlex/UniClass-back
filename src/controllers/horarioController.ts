@@ -7,10 +7,13 @@ import pool from '../database/connection';
    - status 'DEFINITIVO' -> horário oficial publicado
    Parte de aula_alocada, porque o professor pode ter aulas
    em vários semestres (cada semestre tem a sua geração)
+   Com idAdmin (consulta do administrador): só os semestres
+   desse admin, incluindo prévias ainda ocultas
 */
-
-async function buscarAulasDoProfessor(idProfessor: number, status: 'PREVIA' | 'DEFINITIVO') {
-    const filtroPrevia = status === 'PREVIA' ? 'AND s.previas_visiveis = 1' : '';
+export async function buscarAulasDoProfessor(idProfessor: number, status: 'PREVIA' | 'DEFINITIVO', idAdmin?: number) {
+    const filtroPrevia = status === 'PREVIA' && idAdmin === undefined ? 'AND s.previas_visiveis = 1' : '';
+    const filtroAdmin  = idAdmin === undefined ? '' : 'AND s.id_admin = ?';
+    const parametros   = idAdmin === undefined ? [idProfessor, status] : [idProfessor, status, idAdmin];
 
     const [aulas]: any = await pool.query(
       `SELECT a.id_aula, g.id_geracao, g.numero_versao, s.nome AS semestre, s.periodo_letivo,
@@ -30,9 +33,10 @@ async function buscarAulasDoProfessor(idProfessor: number, status: 'PREVIA' | 'D
           AND g.status = ?
           AND s.ativo = 1
           ${filtroPrevia}
+          ${filtroAdmin}
         ORDER BY FIELD(d.dia_semana, 'SEGUNDA', 'TERCA', 'QUARTA', 'QUINTA', 'SEXTA', 'SABADO'),
                  b.ordem, sl.numero_aula`,
-      [idProfessor, status]
+      parametros
     );
 
     return aulas.map((aula: any) => ({
