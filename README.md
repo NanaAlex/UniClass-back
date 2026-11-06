@@ -19,7 +19,7 @@ https://drive.google.com/drive/folders/11swJExn4jfPuFHDg00saQOlSUQaMkUy3?usp=dri
 
 ### Pré-requisitos
 - Node.js 18+
-- MySQL 8.0.16+ rodando (no Windows, confira se o serviço do MySQL está iniciado)
+- IP liberado no firewall do banco do Azure (peça à responsável pelo banco)
 
 ### Instalação
 
@@ -38,8 +38,10 @@ cp .env.example .env
 
 ### Banco de dados
 
-- **Banco novo:** rode o `database/schemas.sql` inteiro no MySQL Workbench. Ele cria o banco `staggy_dev` com todas as tabelas.
-- **Banco criado antes das últimas mudanças:** rode as migrations da pasta `database/migrations`, em ordem (`001`, `002`, `003`, `004`). Cada uma deve ser aplicada uma única vez.
+O banco de desenvolvimento (`staggy_dev`) é **compartilhado** e fica hospedado no Azure. Não é preciso instalar MySQL localmente: basta preencher o `.env` com os dados do Azure (veja o guia de configuração do ambiente, enviado à equipe).
+
+- **Alterações na estrutura** (novas tabelas, colunas etc.) vão em `database/migrations`, com o próximo número da sequência. Cada migration é rodada **uma única vez, por uma única pessoa**, no MySQL Workbench, na conexão do Azure. Avise a equipe antes de rodar.
+- **`database/schemas.sql`**: documenta a estrutura completa e serve só para criar um banco **local** do zero. ⚠️ **Nunca rode esse arquivo no banco do Azure**, pois ele recria o banco e pode apagar os dados de todos.
 
 ### Rodar
 
@@ -122,6 +124,7 @@ A sessão expira depois de **1 hora sem uso** e é encerrada no logout, na troca
 | DB_USER     | Usuário do banco                                                 | root                    |
 | DB_PASS     | Senha do banco                                                   |                         |
 | DB_NAME     | Nome do banco                                                    | staggy_dev              |
+| DB_SSL      | Ativa SSL na conexão (obrigatório no Azure)                      | `true` no Azure, vazio no MySQL local |
 | APP_URL     | Endereço do front-end, usado no link do convite                  | http://localhost:3000   |
 | SMTP_HOST   | Servidor de e-mail (ex.: `smtp.gmail.com`)                       |                         |
 | SMTP_PORT   | Porta do servidor de e-mail                                      | 465                     |
@@ -141,3 +144,6 @@ No `.env`, escreva os comentários sempre em linha separada, nunca depois do val
 | `EADDRINUSE` na porta 3333 | Já existe um back rodando em outro terminal | Feche o outro com `Ctrl + C` |
 | `No database selected` no Workbench | Banco não selecionado | Comece o script com `USE staggy_dev;` |
 | Acentos viram `�` nos testes com `curl` | O terminal UCRT64 não envia em UTF-8 | Nos testes pelo terminal, escreva sem acento |
+| `Access denied for user 'equipe'@'localhost'` | O back está conectando no MySQL local | Deixe uma única linha `DB_HOST` no `.env`, com o endereço do Azure, e reinicie |
+| `Connections using insecure transport are prohibited` | SSL desligado | Confira `DB_SSL=true` no `.env` e reinicie |
+| `ETIMEDOUT` ao conectar no banco | IP não liberado no firewall do Azure | Peça a liberação do seu IP atual |
