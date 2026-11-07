@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { verificarSessao, somenteProfessor } from "../middlewares/autenticacao";
 import { solicitarAlteracaoFormulario, listarSolicitacoesFormulario, solicitarAlteracaoHorario, listarSolicitacoesHorario }      from "../controllers/solicitacaoController";
-import { listarFormularios, dadosDoFormulario, enviarResposta, verResposta} from "../controllers/formularioController";
+import { listarFormularios, formularioAtual, dadosDoFormulario, enviarResposta, verResposta} from "../controllers/formularioController";
 import { verPreviaHorario, verHorarioDefinitivo, listarEstruturasDoProfessor } from "../controllers/horarioController";
 
 const router = Router();
@@ -11,6 +11,7 @@ router.use(verificarSessao, somenteProfessor);
 
 // Forms
 router.get('/formularios', listarFormularios);
+router.get('/formularios/atual', formularioAtual); // antes do /:idFormulario, senão "atual" vira um id
 router.get('/formularios/:idFormulario', dadosDoFormulario);
 router.get('/formularios/:idFormulario/resposta', verResposta);
 router.get('/solicitacoes', listarSolicitacoesFormulario);

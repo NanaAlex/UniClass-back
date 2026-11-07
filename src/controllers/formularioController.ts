@@ -19,6 +19,27 @@ async function buscarFormularioAcessivel(idProfessor: number, idFormulario: numb
   return rows.length > 0 ? rows[0] : null;
 }
 
+/*
+   Formulário de um administrador com quem o professor tem
+   vínculo ativo, em qualquer status. Usado só para LER
+   (dados da tela e resposta depois do prazo); para ENVIAR
+   continua valendo o buscarFormularioAcessivel (RF 2.12).
+*/
+async function buscarFormularioVinculado(idProfessor: number, idFormulario: number) {
+    const [rows]: any = await pool.query(
+        `SELECT f.id_formulario, f.nome, f.status, f.data_inicio, f.data_fim, f.id_admin
+             FROM formulario f
+             JOIN vinculo_professor_admin v
+               ON v.id_admin = f.id_admin
+              AND v.id_professor = ?
+              AND v.ativo = TRUE
+            WHERE f.id_formulario = ?`,
+        [idProfessor, idFormulario]
+    );
+
+  return rows.length > 0 ? rows[0] : null;
+}
+
 function validarCorpoResposta(corpo: any): string | null {
     const { disponibilidades, preferenciasTurno, interesses } = corpo;
 
@@ -87,12 +108,66 @@ export async function listarFormularios(req: Request, resposta: Response) {
     }
 }
 
+/*
+   CU-033, RF 2.1: formulário atual do professor
+   O mais recente dos administradores vinculados, mesmo que
+   ainda não tenha começado (NAO_INICIADO) ou já tenha
+   encerrado: a tela mostra "Indisponível", "Aguardando sua
+   resposta", "Respondido" ou "Encerrado" conforme o caso.
+   Sem nenhum formulário, devolve { formulario: null }.
+*/
+export async function formularioAtual(req: Request, resposta: Response) {
+    const { id } = resposta.locals.usuario;
+
+    try {
+        const [rows]: any = await pool.query(
+            `SELECT f.id_formulario, f.nome, f.status, f.data_inicio, f.data_fim,
+                    r.id_resposta, r.status AS status_resposta, r.data_envio
+               FROM formulario f
+               JOIN vinculo_professor_admin v
+                 ON v.id_admin = f.id_admin
+                AND v.id_professor = ?
+                AND v.ativo = TRUE
+               LEFT JOIN resposta_formulario r
+                 ON r.id_formulario = f.id_formulario
+                AND r.id_professor = ?
+              ORDER BY f.id_formulario DESC
+              LIMIT 1`,
+            [id, id]
+        );
+
+        if (rows.length === 0) {
+          return resposta.json({ formulario: null });
+        }
+
+        const linha = rows[0];
+
+        return resposta.json({
+            formulario: {
+                id: linha.id_formulario,
+                nome: linha.nome,
+                status: linha.status,
+                dataInicio: linha.data_inicio,
+                dataFim: linha.data_fim,
+                respondido: linha.id_resposta !== null,
+                statusResposta: linha.status_resposta,
+                dataEnvio: linha.data_envio,
+            },
+        });
+
+    } catch (error) {
+        console.error('Erro ao buscar o formulário atual:', error);
+        return resposta.status(500).json({ error: 'Erro ao buscar o formulário atual' });
+    }
+}
+
 export async function dadosDoFormulario(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
     const idFormulario = Number(req.params.idFormulario);
 
     try {
-        const formulario = await buscarFormularioAcessivel(id, idFormulario);
+        // Leitura: vale também para formulário encerrado (ver a resposta, RF 2.14)
+        const formulario = await buscarFormularioVinculado(id, idFormulario);
 
         if (!formulario) {
             return resposta.status(404).json({ error: 'Formulário indisponível' });
@@ -109,8 +184,13 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
 
         // aulas com blocos
         const [slots]: any = await pool.query(
-          `SELECT s.id_slot, s.numero_aula, s.hora_inicio, s.hora_fim,
-                  b.turno, b.ordem AS ordem_bloco
+          `SELECT s.id_slot, s.numero_aula,
+                  TIME_FORMAT(s.hora_inicio, '%H:%i') AS hora_inicio,
+                  TIME_FORMAT(s.hora_fim, '%H:%i')    AS hora_fim,
+                  b.turno, b.ordem AS ordem_bloco,
+                  (SELECT COALESCE(SUM(b2.qtd_aulas), 0) FROM bloco_aula b2
+                    WHERE b2.id_admin = b.id_admin AND b2.turno = b.turno AND b2.ordem < b.ordem)
+                    + s.numero_aula AS posicao
              FROM slot_aula s
              JOIN bloco_aula b ON b.id_bloco = s.id_bloco
             WHERE b.id_admin = ?
@@ -118,19 +198,27 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
           [formulario.id_admin]
         );
 
+        // Migration 004: o formulário não tem semestre; vale para as
+        // matérias de todos os semestres do administrador (RF 2.5)
         const [materias]: any = await pool.query(
-          `SELECT id_materia, nome, turno
-             FROM materia
-            WHERE id_semestre = ?
-              AND ativo = TRUE
-            ORDER BY nome`,
-          [formulario.id_semestre]
+          `SELECT m.id_materia, m.nome, m.qtd_aulas_semana, m.qtd_professores,
+                  s.id_semestre, s.nome AS semestre,
+                  (SELECT COUNT(*) FROM semestre s2
+                    WHERE s2.id_admin = s.id_admin AND s2.id_semestre <= s.id_semestre) AS numero_semestre
+             FROM materia m
+             JOIN semestre s ON s.id_semestre = m.id_semestre
+            WHERE s.id_admin = ?
+              AND m.ativo = TRUE
+            ORDER BY s.id_semestre, m.nome`,
+          [formulario.id_admin]
         );
 
           return resposta.json({
             formulario: {
                 id: formulario.id_formulario,
                 nome: formulario.nome,
+                status: formulario.status,
+                dataInicio: formulario.data_inicio,
                 dataFim: formulario.data_fim,
             },
 
@@ -145,6 +233,7 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
                 turno: slot.turno,
                 bloco: slot.ordem_bloco,
                 aula: slot.numero_aula,
+                posicao: Number(slot.posicao), // aula contando o turno inteiro
                 inicio: slot.hora_inicio,
                 fim: slot.hora_fim,
             })),
@@ -152,7 +241,11 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
             materias: materias.map((materia: any) => ({
                 id: materia.id_materia,
                 nome: materia.nome,
-                turno: materia.turno,
+                aulasPorSemana: materia.qtd_aulas_semana,
+                qtdProfessores: materia.qtd_professores,
+                idSemestre: materia.id_semestre,
+                semestre: materia.semestre,
+                numeroSemestre: Number(materia.numero_semestre),
             })),
 
           });
@@ -207,9 +300,13 @@ export async function enviarResposta(req: Request, resposta: Response) {
           [formulario.id_admin]
         );
 
+        // Migration 004: matérias de todos os semestres do administrador
         const [materiasValidas]: any = await pool.query(
-          'SELECT id_materia FROM materia WHERE id_semestre = ? AND ativo = TRUE',
-          [formulario.id_semestre]
+          `SELECT m.id_materia
+             FROM materia m
+             JOIN semestre s ON s.id_semestre = m.id_semestre
+            WHERE s.id_admin = ? AND m.ativo = TRUE`,
+          [formulario.id_admin]
         );
 
         const { disponibilidades, preferenciasTurno, interesses } = req.body;
@@ -333,6 +430,9 @@ export async function verResposta(req: Request, resposta: Response) {
 export async function montarDetalhesResposta(idResposta: number) {
         const [disponibilidades]: any = await pool.query(
           `SELECT dl.dia_semana, dl.turno, b.ordem AS bloco, s.numero_aula,
+                  (SELECT COALESCE(SUM(b2.qtd_aulas), 0) FROM bloco_aula b2
+                    WHERE b2.id_admin = b.id_admin AND b2.turno = b.turno AND b2.ordem < b.ordem)
+                    + s.numero_aula AS posicao,
                   s.hora_inicio, s.hora_fim, d.disponivel
              FROM disponibilidade_horario d
              JOIN dia_letivo dl ON dl.id_dia_letivo = d.id_dia_letivo
@@ -354,7 +454,7 @@ export async function montarDetalhesResposta(idResposta: number) {
         );
 
         const [interesses]: any = await pool.query(
-          `SELECT m.nome, i.nota_interesse
+          `SELECT m.id_materia, m.nome, i.nota_interesse
              FROM interesse_materia i
              JOIN materia m ON m.id_materia = i.id_materia
             WHERE i.id_resposta = ?
@@ -368,6 +468,7 @@ export async function montarDetalhesResposta(idResposta: number) {
                 turno: item.turno,
                 bloco: item.bloco,
                 aula: item.numero_aula,
+                posicao: Number(item.posicao), // aula contando o turno inteiro
                 inicio: item.hora_inicio,
                 fim: item.hora_fim,
                 disponivel: item.disponivel === 1,
@@ -380,6 +481,7 @@ export async function montarDetalhesResposta(idResposta: number) {
             })),
 
             interesses: interesses.map((item: any) => ({
+              idMateria: item.id_materia,
               materia: item.nome,
               nota: item.nota_interesse,
             })),
