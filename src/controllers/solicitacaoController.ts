@@ -189,15 +189,20 @@ export async function listarSolicitacoesHorario(req: Request, resposta: Response
 
     const [linhas]: any = await pool.query(
       `SELECT sh.id_solicitacao, sh.id_geracao, g.numero_versao, s.nome AS semestre,
-              sh.id_aula, m.nome AS materia, d.dia_semana, sl.numero_aula,
+              sh.id_aula, m.nome AS materia, t.nome AS turma, d.dia_semana, sl.numero_aula,
+              (SELECT COALESCE(SUM(b2.qtd_aulas), 0) FROM bloco_aula b2
+                WHERE b2.id_admin = b.id_admin AND b2.turno = b.turno AND b2.ordem < b.ordem)
+                + sl.numero_aula AS posicao,
               sh.motivo, sh.status, sh.data_envio
          FROM solicitacao_alteracao_horario sh
          JOIN geracao_horario g   ON g.id_geracao     = sh.id_geracao
          JOIN semestre s          ON s.id_semestre    = g.id_semestre
          LEFT JOIN aula_alocada a ON a.id_aula        = sh.id_aula
          LEFT JOIN materia m      ON m.id_materia     = a.id_materia
+         LEFT JOIN turma t        ON t.id_turma       = a.id_turma
          LEFT JOIN dia_letivo d   ON d.id_dia_letivo  = a.id_dia_letivo
          LEFT JOIN slot_aula sl   ON sl.id_slot       = a.id_slot
+         LEFT JOIN bloco_aula b   ON b.id_bloco       = sl.id_bloco
         WHERE sh.id_professor = ?
         ORDER BY sh.data_envio DESC`,
       [id]
@@ -211,8 +216,10 @@ export async function listarSolicitacoesHorario(req: Request, resposta: Response
       aula: linha.id_aula === null ? null : {
         idAula:  linha.id_aula,
         materia: linha.materia,
+        turma:   linha.turma,
         dia:     linha.dia_semana,
         aula:    linha.numero_aula,
+        posicao: Number(linha.posicao), // aula contando o turno inteiro, como na grade
       },
       motivo:    linha.motivo,
       status:    linha.status,
