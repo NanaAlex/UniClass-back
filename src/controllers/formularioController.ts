@@ -118,13 +118,18 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
           [formulario.id_admin]
         );
 
+        // Formulário sem semestre (migration 004) cobre as disciplinas de todos os
+        // semestres ativos do admin; com semestre, só as dele (RN-15, RN-36)
         const [materias]: any = await pool.query(
-          `SELECT id_materia, nome, turno
-             FROM materia
-            WHERE id_semestre = ?
-              AND ativo = TRUE
-            ORDER BY nome`,
-          [formulario.id_semestre]
+          `SELECT m.id_materia, m.nome, m.turno, m.id_semestre
+             FROM materia m
+             JOIN semestre s ON s.id_semestre = m.id_semestre
+            WHERE s.id_admin = ?
+              AND s.ativo = TRUE
+              AND m.ativo = TRUE
+              AND (? IS NULL OR m.id_semestre = ?)
+            ORDER BY m.nome`,
+          [formulario.id_admin, formulario.id_semestre, formulario.id_semestre]
         );
 
           return resposta.json({
@@ -153,6 +158,7 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
                 id: materia.id_materia,
                 nome: materia.nome,
                 turno: materia.turno,
+                idSemestre: materia.id_semestre,
             })),
 
           });
@@ -208,8 +214,12 @@ export async function enviarResposta(req: Request, resposta: Response) {
         );
 
         const [materiasValidas]: any = await pool.query(
-          'SELECT id_materia FROM materia WHERE id_semestre = ? AND ativo = TRUE',
-          [formulario.id_semestre]
+          `SELECT m.id_materia
+             FROM materia m
+             JOIN semestre s ON s.id_semestre = m.id_semestre
+            WHERE s.id_admin = ? AND s.ativo = TRUE AND m.ativo = TRUE
+              AND (? IS NULL OR m.id_semestre = ?)`,
+          [formulario.id_admin, formulario.id_semestre, formulario.id_semestre]
         );
 
         const { disponibilidades, preferenciasTurno, interesses } = req.body;
@@ -232,6 +242,18 @@ export async function enviarResposta(req: Request, resposta: Response) {
             return resposta.status(400).json({
             error: 'A resposta contém dias, horários ou matérias que não pertencem a este formulário',
           });
+        }
+
+        // RN-17, RN-22, CA-27: cada dia/turno com disponibilidade marcada exige
+        // a sua nota de prioridade; nenhuma nota é presumida
+        const diasComDisponibilidade = new Set(
+            disponibilidades.filter((item: any) => item.disponivel === true).map((item: any) => item.idDiaLetivo)
+        );
+        const diasComNota = new Set(preferenciasTurno.map((item: any) => item.idDiaLetivo));
+        if ([...diasComDisponibilidade].some((idDia) => !diasComNota.has(idDia))) {
+            return resposta.status(400).json({
+              error: 'Informe a nota de prioridade de cada dia e turno em que marcou disponibilidade',
+            });
         }
 
          const conexao = await pool.getConnection();
