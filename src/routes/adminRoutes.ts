@@ -13,6 +13,8 @@ import { adicionarTurma, alterarTurnoTurma, retirarTurma }                      
 import { listarMaterias, criarMateria, editarMateria, excluirMateria }              from "../controllers/materiaController";
 import { listarFormulariosDoAdmin, lancarFormulario, editarDatasFormulario,
          abrirFormulario, encerrarFormulario, listarProfessoresDoFormulario }                                      from "../controllers/publicacaoController"
+import { gerarHorario, listarGeracoes, verGeracao, listarTravasDoPeriodo,
+         aplicarEdicao, publicarGeracao }                                         from "../controllers/geracaoController";
 
 
 const router = Router();
@@ -69,5 +71,13 @@ router.put('/formularios/:idFormulario/datas', editarDatasFormulario);
 router.post('/formularios/:idFormulario/abrir', abrirFormulario);
 router.post('/formularios/:idFormulario/encerrar', encerrarFormulario);
 router.get('/formularios/:idFormulario/professores', listarProfessoresDoFormulario);
+
+// geração do horário pelo motor Prolog (especificação v2.7)
+router.post('/geracoes', gerarHorario);
+router.get('/geracoes', listarGeracoes);
+router.get('/geracoes/travas', listarTravasDoPeriodo);
+router.get('/geracoes/:runId', verGeracao);
+router.post('/geracoes/:runId/edicoes', aplicarEdicao);
+router.post('/geracoes/:runId/publicar', publicarGeracao);
 
 export default router;
