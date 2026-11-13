@@ -11,6 +11,7 @@ import {
 } from "../controllers/gestaoProfessorController";
 import { adicionarTurma, alterarTurnoTurma, retirarTurma }                          from "../controllers/turmaController";
 import { listarMaterias, criarMateria, editarMateria, excluirMateria }              from "../controllers/materiaController";
+import { lerDados, salvarDados }                                                     from "../controllers/dadosController";
 import { listarFormulariosDoAdmin, lancarFormulario, editarDatasFormulario,
          abrirFormulario, encerrarFormulario, listarProfessoresDoFormulario }                                      from "../controllers/publicacaoController"
 
@@ -19,6 +20,10 @@ const router = Router();
 
 // Protecao
 router.use(verificarSessao, somenteAdministrador);
+
+// aba Dados inteira (tela "Dados do curso")
+router.get('/dados', lerDados);
+router.put('/dados', salvarDados);
 
 // dias letivos
 router.get('/turnos/:turno/dias', listarDias);
