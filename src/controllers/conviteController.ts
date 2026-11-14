@@ -145,11 +145,14 @@ export async function convidarProfessores(req: Request, resposta: Response) {
         }
 
         const enviados = resultados.filter((item) => item.enviado).length;
+        const message   = `${enviados} de ${emails.length} convite(s) enviado(s)`;
 
-        return resposta.status(enviados > 0 ? 201 : 400).json({
-            message: `${enviados} de ${emails.length} convite(s) enviado(s)`,
-            resultados,
-        });
+        // Nenhum enviado: o motivo do primeiro recusado vai em error, como nos outros 400
+        if (enviados === 0) {
+          return resposta.status(400).json({ error: resultados[0].error, message, resultados });
+        }
+
+        return resposta.status(201).json({ message, resultados });
     } catch (error) {
         console.error('Erro ao convidar professores:', error);
         return resposta.status(500).json({ error: 'Erro interno ao enviar os convites' });

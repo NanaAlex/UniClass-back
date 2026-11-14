@@ -7,7 +7,7 @@ import { buscarAulasDoProfessor }  from './horarioController';
    Indicadores da listagem (etiquetas e filtros da tela):
    - resposta_pendente:    nao respondeu algum formulario ABERTO do admin
    - alteracao_formulario: tem pedido PENDENTE de alteracao de resposta
-   - alteracao_horario:    tem pedido PENDENTE sobre a previa atual do admin
+   - alteracao_horario:    tem pedido PENDENTE e ainda nao lido sobre a previa atual do admin
      (o pedido de horario e so descritivo, entao some quando a previa e substituida)
 */
 const INDICADORES = `
@@ -29,13 +29,24 @@ const INDICADORES = `
                 WHERE g.id_admin = v.id_admin
                   AND g.status = 'PREVIA'
                   AND sh.id_professor = u.id_usuario
-                  AND sh.status = 'PENDENTE') AS alteracao_horario`;
+                  AND sh.status = 'PENDENTE'
+                  AND sh.data_leitura IS NULL) AS alteracao_horario`;
 
 const FILTROS: Record<string, string> = {
     'resposta-pendente':    'HAVING resposta_pendente = 1',
     'alteracao-formulario': 'HAVING alteracao_formulario = 1',
     'alteracao-horario':    'HAVING alteracao_horario = 1',
 };
+
+// Envio da resposta ao formulario mais recente do admin (o que a tela Formulario mostra)
+const DATA_RESPOSTA = `
+       (SELECT DATE_FORMAT(r.data_envio, '%Y-%m-%dT%H:%i:%s')
+          FROM resposta_formulario r
+         WHERE r.id_professor = u.id_usuario
+           AND r.id_formulario = (SELECT MAX(f2.id_formulario) FROM formulario f2
+                                   WHERE f2.id_admin = v.id_admin)) AS data_resposta`;
+
+const DATA_VINCULO = `DATE_FORMAT(v.data_vinculo, '%Y-%m-%dT%H:%i:%s') AS data_vinculo`;
 
 const montarIndicadores = (linha: any) => ({
     respostaPendente:             linha.resposta_pendente === 1,
@@ -51,7 +62,9 @@ async function buscarProfessorVinculado(idAdmin: number, idProfessor: number) {
 
     const [rows]: any = await pool.query(
         `SELECT u.id_usuario, u.nome, u.email, u.ativo,
-                p.carga_horaria_semanal, p.titulacao, v.data_vinculo,
+                p.carga_horaria_semanal, p.titulacao,
+                ${DATA_VINCULO},
+                ${DATA_RESPOSTA},
                 ${INDICADORES}
            FROM vinculo_professor_admin v
            JOIN usuario u   ON u.id_usuario = v.id_professor
@@ -63,6 +76,33 @@ async function buscarProfessorVinculado(idAdmin: number, idProfessor: number) {
     );
 
     return rows.length > 0 ? rows[0] : null;
+}
+
+/*
+   Convites PENDENTES e no prazo de quem ainda nao tem vinculo ativo com o admin.
+   Sem o nome: de quem ja tem conta, ele e dado de outra administracao ate o aceite
+   (RF 6.4, RN-37). O convite vencido segue PENDENTE no banco ate o link ser aberto,
+   por isso o filtro pela data.
+*/
+async function buscarConvitesPendentes(idAdmin: number, padrao: string) {
+    const [linhas]: any = await pool.query(
+        `SELECT c.id_convite, c.email_destino, c.tipo_convite,
+                DATE_FORMAT(c.data_envio, '%Y-%m-%dT%H:%i:%s')     AS data_envio,
+                DATE_FORMAT(c.data_expiracao, '%Y-%m-%dT%H:%i:%s') AS data_expiracao
+           FROM convite_professor c
+          WHERE c.id_admin = ?
+            AND c.status = 'PENDENTE'
+            AND c.data_expiracao > NOW()
+            AND c.email_destino LIKE ?
+            AND NOT EXISTS (SELECT 1 FROM vinculo_professor_admin v
+                              JOIN usuario u ON u.id_usuario = v.id_professor
+                             WHERE v.id_admin = c.id_admin
+                               AND v.ativo = TRUE
+                               AND u.email = c.email_destino)
+          ORDER BY c.email_destino`,
+        [idAdmin, padrao]
+    );
+    return linhas;
 }
 
 // CU-009 / CU-010 / CU-028: listagem com busca por nome ou e-mail e filtros
@@ -81,38 +121,56 @@ export async function listarProfessores(req: Request, resposta: Response) {
     const padrao = `%${termo.replace(/[\\%_]/g, '\\$&')}%`;
 
     try {
-        const [rows]: any = await pool.query(
-            `SELECT u.id_usuario, u.nome, u.email, u.ativo,
-                    ${INDICADORES}
-               FROM vinculo_professor_admin v
-               JOIN usuario u ON u.id_usuario = v.id_professor
-              WHERE v.id_admin = ?
-                AND v.ativo = TRUE
-                AND (u.nome LIKE ? OR u.email LIKE ?)
-              ${filtro === '' ? '' : FILTROS[filtro]}
-              ORDER BY u.nome`,
-            [id, padrao, padrao]
-        );
+        // Professores e convites sao independentes: as duas consultas vao juntas ao banco
+        const [[rows], linhasConvites]: any = await Promise.all([
+            pool.query(
+                `SELECT u.id_usuario, u.nome, u.email, u.ativo,
+                        ${DATA_VINCULO},
+                        ${DATA_RESPOSTA},
+                        ${INDICADORES}
+                   FROM vinculo_professor_admin v
+                   JOIN usuario u ON u.id_usuario = v.id_professor
+                  WHERE v.id_admin = ?
+                    AND v.ativo = TRUE
+                    AND (u.nome LIKE ? OR u.email LIKE ?)
+                  ${filtro === '' ? '' : FILTROS[filtro]}
+                  ORDER BY u.nome`,
+                [id, padrao, padrao]
+            ),
+            // Convidado nao deve resposta nem tem pedido: com filtro, a lista vem vazia
+            filtro === '' ? buscarConvitesPendentes(id, padrao) : Promise.resolve([]),
+        ]);
 
         const professores = rows.map((linha: any) => ({
             id: linha.id_usuario,
             nome: linha.nome,
             email: linha.email,
             ativo: linha.ativo === 1,
+            dataVinculo: linha.data_vinculo,
+            dataResposta: linha.data_resposta,
             ...montarIndicadores(linha),
         }));
 
+        const convites = linhasConvites.map((linha: any) => ({
+            idConvite: linha.id_convite,
+            email: linha.email_destino,
+            tipo: linha.tipo_convite,
+            dataEnvio: linha.data_envio,
+            dataExpiracao: linha.data_expiracao,
+        }));
+
         // RF 8.5: mensagem quando a busca ou o filtro nao retorna nada
-        if (professores.length === 0) {
+        if (professores.length === 0 && convites.length === 0) {
           return resposta.json({
             professores,
+            convites,
             message: termo === '' && filtro === ''
                 ? 'Nenhum professor vinculado'
                 : 'Nenhum professor encontrado',
           });
         }
 
-        return resposta.json({ professores });
+        return resposta.json({ professores, convites });
     } catch (error) {
         console.error('Erro ao listar professores:', error);
         return resposta.status(500).json({ error: 'Erro interno ao listar os professores' });
@@ -153,6 +211,7 @@ export async function dadosProfessor(req: Request, resposta: Response) {
                 cargaHorariaSemanal: Number(professor.carga_horaria_semanal),
                 titulacao: professor.titulacao,
                 dataVinculo: professor.data_vinculo,
+                dataResposta: professor.data_resposta,
                 ...montarIndicadores(professor),
             },
             formularios: formularios.map((linha: any) => ({
@@ -252,7 +311,13 @@ export async function listarSolicitacoesProfessor(req: Request, resposta: Respon
 
         const [doFormulario]: any = await pool.query(
             `SELECT s.id_solicitacao, s.motivo, s.status, s.data_solicitacao, s.data_analise,
-                    f.id_formulario, f.nome AS nome_formulario
+                    f.id_formulario, f.nome AS nome_formulario,
+                    (SELECT n.mensagem FROM notificacao n
+                      WHERE n.tipo = 'SOLICITACAO_DECIDIDA'
+                        AND n.tipo_referencia = 'SOLICITACAO_ALTERACAO_RESPOSTA'
+                        AND n.id_referencia = s.id_solicitacao
+                      ORDER BY n.id_notificacao DESC
+                      LIMIT 1) AS resposta
                FROM solicitacao_alteracao_resposta s
                JOIN resposta_formulario r ON r.id_resposta = s.id_resposta
                JOIN formulario f          ON f.id_formulario = r.id_formulario
@@ -264,8 +329,17 @@ export async function listarSolicitacoesProfessor(req: Request, resposta: Respon
 
         const [doHorario]: any = await pool.query(
             `SELECT sh.id_solicitacao, sh.id_geracao, g.numero_versao, g.status AS status_geracao,
-                    s.nome AS semestre, sh.id_aula, m.nome AS materia, d.dia_semana, sl.numero_aula,
-                    sh.motivo, sh.status, sh.data_envio
+                    s.nome AS semestre, sh.id_aula, m.nome AS materia, d.dia_semana, d.turno,
+                    sl.numero_aula,
+                    -- aula contando o turno inteiro, como em montarDetalhesResposta
+                    (SELECT COALESCE(SUM(b2.qtd_aulas), 0) FROM bloco_aula b2
+                      WHERE b2.id_admin = b.id_admin AND b2.turno = b.turno AND b2.ordem < b.ordem)
+                      + sl.numero_aula AS posicao,
+                    t.nome AS turma,
+                    -- numero do semestre = posicao entre os do admin, como em semestreController
+                    (SELECT COUNT(*) FROM semestre s2
+                      WHERE s2.id_admin = st.id_admin AND s2.id_semestre <= st.id_semestre) AS numero_semestre,
+                    sh.motivo, sh.status, sh.data_envio, sh.data_leitura, sh.resposta
                FROM solicitacao_alteracao_horario sh
                JOIN geracao_horario g   ON g.id_geracao     = sh.id_geracao
                JOIN semestre s          ON s.id_semestre    = g.id_semestre
@@ -273,6 +347,9 @@ export async function listarSolicitacoesProfessor(req: Request, resposta: Respon
                LEFT JOIN materia m      ON m.id_materia     = a.id_materia
                LEFT JOIN dia_letivo d   ON d.id_dia_letivo  = a.id_dia_letivo
                LEFT JOIN slot_aula sl   ON sl.id_slot       = a.id_slot
+               LEFT JOIN bloco_aula b   ON b.id_bloco       = sl.id_bloco
+               LEFT JOIN turma t        ON t.id_turma       = a.id_turma
+               LEFT JOIN semestre st    ON st.id_semestre   = t.id_semestre
               WHERE sh.id_professor = ?
                 AND g.id_admin = ?
               ORDER BY sh.data_envio DESC`,
@@ -288,6 +365,7 @@ export async function listarSolicitacoesProfessor(req: Request, resposta: Respon
                 status: linha.status,
                 dataSolicitacao: linha.data_solicitacao,
                 dataAnalise: linha.data_analise,
+                resposta: linha.status === 'PENDENTE' ? null : linha.resposta,
             })),
             horario: doHorario.map((linha: any) => ({
                 id:            linha.id_solicitacao,
@@ -300,10 +378,15 @@ export async function listarSolicitacoesProfessor(req: Request, resposta: Respon
                     materia: linha.materia,
                     dia:     linha.dia_semana,
                     aula:    linha.numero_aula,
+                    turno:   linha.turno,
+                    posicao: Number(linha.posicao),
+                    turma:   { nome: linha.turma, numeroSemestre: Number(linha.numero_semestre) },
                 },
-                motivo:    linha.motivo,
-                status:    linha.status,
-                dataEnvio: linha.data_envio,
+                motivo:      linha.motivo,
+                status:      linha.status,
+                dataEnvio:   linha.data_envio,
+                dataLeitura: linha.data_leitura,
+                resposta:    linha.resposta,
             })),
         });
     } catch (error) {
@@ -366,7 +449,8 @@ export async function verSolicitacaoFormulario(req: Request, resposta: Response)
     }
 }
 
-// CU-037: aprova (libera a resposta para reenvio) ou recusa; o professor e notificado (RF 5.8)
+// CU-037: aprova (libera a resposta para reenvio) ou recusa; o professor e notificado (RF 5.8).
+// A resposta do admin e opcional nas duas decisoes; sem ela, vai a mensagem padrao.
 export async function decidirSolicitacaoFormulario(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
     const idSolicitacao = Number(req.params.idSolicitacao);
@@ -375,9 +459,6 @@ export async function decidirSolicitacaoFormulario(req: Request, resposta: Respo
 
     if (decisao !== 'APROVADA' && decisao !== 'REJEITADA') {
       return resposta.status(400).json({ error: 'Decisão inválida; use APROVADA ou REJEITADA' });
-    }
-    if (decisao === 'REJEITADA' && textoResposta === '') {
-      return resposta.status(400).json({ error: 'Informe o motivo da recusa' });
     }
     if (textoResposta.length > 500) {
       return resposta.status(400).json({ error: 'A resposta deve ter no máximo 500 caracteres' });
@@ -418,7 +499,9 @@ export async function decidirSolicitacaoFormulario(req: Request, resposta: Respo
 
             const mensagem = textoResposta !== ''
                 ? textoResposta
-                : `Sua solicitação de alteração do formulário "${solicitacao.nome_formulario}" foi aprovada. Você já pode reenviar a resposta.`;
+                : aprovada
+                    ? `Sua solicitação de alteração do formulário "${solicitacao.nome_formulario}" foi aprovada. Você já pode reenviar a resposta.`
+                    : `Sua solicitação de alteração do formulário "${solicitacao.nome_formulario}" foi recusada.`;
 
             await conexao.query(
                 `INSERT INTO notificacao (id_destinatario, tipo, titulo, mensagem, data_envio, tipo_referencia, id_referencia)
@@ -450,6 +533,64 @@ export async function decidirSolicitacaoFormulario(req: Request, resposta: Respo
     } catch (error) {
         console.error('Erro ao decidir solicitação:', error);
         return resposta.status(500).json({ error: 'Erro interno ao registrar a decisão' });
+    }
+}
+
+/*
+   RF 9.5 / RF 3.4: o pedido de horario e so descritivo (nao e aprovado nem
+   rejeitado); o admin o marca como lido e pode deixar uma resposta
+*/
+export async function marcarSolicitacaoHorarioComoLida(req: Request, resposta: Response) {
+    const { id } = resposta.locals.usuario;
+    const idSolicitacao = Number(req.params.idSolicitacao);
+    const entrada = req.body.resposta;
+
+    if (entrada !== undefined && entrada !== null && typeof entrada !== 'string') {
+      return resposta.status(400).json({ error: 'A resposta deve ser um texto' });
+    }
+
+    const textoResposta = typeof entrada === 'string' ? entrada.trim() : '';
+
+    if (textoResposta.length > 500) {
+      return resposta.status(400).json({ error: 'A resposta deve ter no máximo 500 caracteres' });
+    }
+
+    try {
+        if (!Number.isInteger(idSolicitacao)) {
+          return resposta.status(404).json({ error: 'Solicitação não encontrada' });
+        }
+
+        // RN-06: so pedidos sobre geracoes do proprio admin
+        const [pedidos]: any = await pool.query(
+            `SELECT sh.data_leitura
+               FROM solicitacao_alteracao_horario sh
+               JOIN geracao_horario g ON g.id_geracao = sh.id_geracao
+              WHERE sh.id_solicitacao = ?
+                AND g.id_admin = ?`,
+            [idSolicitacao, id]
+        );
+
+        if (pedidos.length === 0) {
+          return resposta.status(404).json({ error: 'Solicitação não encontrada' });
+        }
+
+        // Grava so se ainda nao foi lido: dois cliques ao mesmo tempo nao gravam duas vezes
+        const [atualizacao]: any = await pool.query(
+            `UPDATE solicitacao_alteracao_horario
+                SET data_leitura = NOW(), resposta = ?
+              WHERE id_solicitacao = ?
+                AND data_leitura IS NULL`,
+            [textoResposta === '' ? null : textoResposta, idSolicitacao]
+        );
+
+        if (pedidos[0].data_leitura !== null || atualizacao.affectedRows === 0) {
+          return resposta.status(409).json({ error: 'Esta solicitação já foi lida' });
+        }
+
+        return resposta.json({ message: 'Solicitação marcada como lida' });
+    } catch (error) {
+        console.error('Erro ao marcar solicitação como lida:', error);
+        return resposta.status(500).json({ error: 'Erro interno ao marcar a solicitação como lida' });
     }
 }
 

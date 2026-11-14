@@ -283,6 +283,8 @@ CREATE TABLE solicitacao_alteracao_horario (
   motivo VARCHAR(500) NOT NULL,
   data_envio DATETIME NOT NULL,
   status ENUM('PENDENTE','APROVADA','REJEITADA','CANCELADA') NULL,
+  data_leitura DATETIME NULL,
+  resposta VARCHAR(500) NULL,
   CONSTRAINT fk_solic_horario_professor FOREIGN KEY (id_professor) REFERENCES professor(id_usuario),
   CONSTRAINT fk_solic_horario_geracao FOREIGN KEY (id_geracao) REFERENCES geracao_horario(id_geracao),
   CONSTRAINT fk_solic_horario_aula FOREIGN KEY (id_aula) REFERENCES aula_alocada(id_aula)
