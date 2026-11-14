@@ -9,6 +9,14 @@ const router = Router();
 // Protecao
 router.use(verificarSessao, somenteProfessor);
 
+router.param('idFormulario', (req, resposta, proximo, valor) => {
+  const idFormulario = Number(valor);
+  if (!Number.isInteger(idFormulario) || idFormulario <= 0) {
+    return resposta.status(404).json({ error: 'Formulário indisponível' });
+  }
+  proximo();
+});
+
 // Forms
 router.get('/formularios', listarFormularios);
 router.get('/formularios/atual', formularioAtual); // antes do /:idFormulario, senão "atual" vira um id
