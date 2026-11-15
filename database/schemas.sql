@@ -161,6 +161,7 @@ CREATE TABLE formulario (
   id_admin INT NOT NULL,
   id_semestre INT NULL,
   nome VARCHAR(255) NOT NULL,
+  periodo_letivo VARCHAR(20) NULL,
   data_inicio DATETIME NULL,
   data_fim DATETIME NULL,
   status ENUM('NAO_INICIADO','ABERTO','ENCERRADO') NOT NULL,

@@ -6,9 +6,11 @@ import { atualizarStatusFormularios } from '../utils/agendaFormulario';
 // e de professores vinculados
 async function montarFormularios(idAdmin: number) {
     const [rows]: any = await pool.query(
-        `SELECT f.id_formulario, f.nome, f.status,
+        `SELECT f.id_formulario, f.nome, f.periodo_letivo, f.status, f.encerrado_manualmente,
                 DATE_FORMAT(f.data_inicio, '%Y-%m-%d') AS data_inicio,
                 DATE_FORMAT(f.data_fim, '%Y-%m-%d') AS data_fim,
+                DATE_FORMAT(f.data_inicio, '%Y-%m-%dT%H:%i') AS inicio,
+                DATE_FORMAT(f.data_fim, '%Y-%m-%dT%H:%i') AS fim,
                 (SELECT COUNT(*) FROM resposta_formulario r
                   WHERE r.id_formulario = f.id_formulario) AS respostas,
                 (SELECT COUNT(*) FROM vinculo_professor_admin v
@@ -22,9 +24,15 @@ async function montarFormularios(idAdmin: number) {
     return rows.map((linha: any) => ({
         id: linha.id_formulario,
         nome: linha.nome,
+        periodoLetivo: linha.periodo_letivo,
         status: linha.status,
+        // So o dia (task 07.3) e o instante com a hora (task 08.02), em Brasilia
         dataInicio: linha.data_inicio,
         dataFim: linha.data_fim,
+        inicio: linha.inicio,
+        fim: linha.fim,
+        // Encerrado na mao (CU-025) ou pela data (RF 2.8): a tela so prorroga o segundo
+        encerradoManualmente: linha.encerrado_manualmente === 1,
         respostas: Number(linha.respostas),
         professores: Number(linha.professores),
     }));
@@ -37,7 +45,7 @@ async function buscarFormularioDoAdmin(idAdmin: number, idFormulario: number) {
     const [rows]: any = await pool.query(
         `SELECT f.id_formulario, f.status,
                 DATE_FORMAT(f.data_inicio, '%Y-%m-%d') AS data_inicio,
-                DATE_FORMAT(f.data_fim, '%Y-%m-%d') AS data_fim,
+                DATE_FORMAT(f.data_inicio, '%Y-%m-%d %H:%i') AS inicio_minuto,
                 f.data_fim < NOW() AS termino_vencido,
                 f.id_formulario = (SELECT MAX(id_formulario) FROM formulario
                                     WHERE id_admin = f.id_admin) AS mais_recente
@@ -50,35 +58,61 @@ async function buscarFormularioDoAdmin(idAdmin: number, idFormulario: number) {
     return rows.length > 0 ? rows[0] : null;
 }
 
-// Hoje no horario de Brasilia (RNF 9), no formato AAAA-MM-DD
-const hoje = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
-
-// AAAA-MM-DD de um dia que existe (barra 2027-02-30)
-function dataValida(valor: any) {
-    if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
-
-    const data = new Date(`${valor}T00:00:00Z`);
-    return !isNaN(data.getTime()) && data.toISOString().slice(0, 10) === valor;
+// Agora no horario de Brasilia (RNF 9), no formato do MySQL: AAAA-MM-DD HH:MM:SS
+function agora() {
+    const partes = Object.fromEntries(
+        new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Sao_Paulo', hourCycle: 'h23',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+        }).formatToParts(new Date()).map((parte) => [parte.type, parte.value])
+    );
+    return `${partes.year}-${partes.month}-${partes.day} ${partes.hour}:${partes.minute}:${partes.second}`;
 }
+
+// 'AAAA-MM-DD' (dia inteiro, como na task 07.3: abre as 00:00 e encerra as
+// 23:59:59) ou 'AAAA-MM-DDTHH:MM' (a tela tem data e hora), no horario de
+// Brasilia. Devolve o valor para o MySQL, ou null se o dia ou a hora nao
+// existirem (2027-02-30, 25:00). Textos nesse formato se comparam como texto.
+function lerDataHora(valor: any, fimDoDia: boolean) {
+    const partes = typeof valor === 'string'
+        ? /^(\d{4}-\d{2}-\d{2})(?:T([01]\d|2[0-3]):([0-5]\d))?$/.exec(valor)
+        : null;
+    if (!partes) return null;
+
+    const [, dia, hora, minuto] = partes;
+    const data = new Date(`${dia}T00:00:00Z`);
+    if (isNaN(data.getTime()) || data.toISOString().slice(0, 10) !== dia) return null;
+
+    if (hora === undefined) {
+      return { dia, soDia: true, valor: `${dia} ${fimDoDia ? '23:59:59' : '00:00:00'}` };
+    }
+    return { dia, soDia: false, valor: `${dia} ${hora}:${minuto}:00` };
+}
+
+// Periodo letivo: ano e semestre do ano (ex.: 2027/1)
+const PERIODO_LETIVO = /^\d{4}\/[12]$/;
 
 // Datas do lancamento e da edicao
 function validarDatas(corpo: any) {
-    const { dataInicio, dataFim } = corpo ?? {};
+    const inicio = lerDataHora(corpo?.dataInicio, false);
+    const fim = lerDataHora(corpo?.dataFim, true);
 
-    if (!dataValida(dataInicio)) {
-      return { erro: 'Informe uma data de início válida (AAAA-MM-DD)' };
+    if (!inicio) {
+      return { erro: 'Informe uma data de início válida (AAAA-MM-DD ou AAAA-MM-DDTHH:MM)' };
     }
-    if (!dataValida(dataFim)) {
-      return { erro: 'Informe uma data de término válida (AAAA-MM-DD)' };
+    if (!fim) {
+      return { erro: 'Informe uma data de término válida (AAAA-MM-DD ou AAAA-MM-DDTHH:MM)' };
     }
-    if (dataFim < dataInicio) {
-      return { erro: 'A data de término não pode ser anterior à data de início' };
+    if (fim.valor <= inicio.valor) {
+      return { erro: 'A data de término deve ser posterior à data de início' };
     }
-    if (dataFim < hoje()) {
-      return { erro: 'A data de término não pode ser anterior a hoje' };
+    // So o dia: o termino de hoje (23:59:59) ainda vale, como na 07.3
+    if (fim.valor <= agora()) {
+      return { erro: 'A data de término não pode ser anterior a agora' };
     }
 
-    return { datas: { dataInicio: dataInicio as string, dataFim: dataFim as string } };
+    return { datas: { inicio, fim } };
 }
 
 function validarCorpoLancamento(corpo: any) {
@@ -91,13 +125,17 @@ function validarCorpoLancamento(corpo: any) {
       return { erro: 'O nome do formulário deve ter no máximo 255 caracteres' };
     }
 
-    const { erro, datas } = validarDatas(corpo);
-    return datas ? { dados: { nome, ...datas } } : { erro };
-}
+    // CU-023 (decisao Q18 da 07.3): periodo letivo do formulario, opcional, no
+    // formato da geracao do escalonador (AAAA/1 ou AAAA/2, PERIODO_VALIDO do motor)
+    const { periodoLetivo } = corpo ?? {};
+    const periodo = typeof periodoLetivo === 'string' ? periodoLetivo.trim() : '';
+    if (periodoLetivo !== undefined && periodoLetivo !== null && (typeof periodoLetivo !== 'string' || (periodo && !PERIODO_LETIVO.test(periodo)))) {
+      return { erro: 'Informe o período letivo no formato AAAA/1 ou AAAA/2' };
+    }
 
-// Abre as 00:00 do inicio e encerra as 23:59:59 do termino
-const inicioDoDia = (data: string) => `${data} 00:00:00`;
-const fimDoDia = (data: string) => `${data} 23:59:59`;
+    const { erro, datas } = validarDatas(corpo);
+    return datas ? { dados: { nome, periodoLetivo: periodo || null, ...datas } } : { erro };
+}
 
 // CU-026: lista com o estado e as respostas de cada formulario
 export async function listarFormulariosDoAdmin(req: Request, resposta: Response) {
@@ -155,9 +193,9 @@ export async function lancarFormulario(req: Request, resposta: Response) {
               // Sem id_semestre o formulario alcanca todos os semestres do admin
               // (semestre.id_admin) e as disciplinas de cada um 
               await conexao.query(
-                  `INSERT INTO formulario (id_admin, nome, data_inicio, data_fim, status)
-                   VALUES (?, ?, ?, ?, IF(? <= NOW(), 'ABERTO', 'NAO_INICIADO'))`,
-                  [id, dados.nome, inicioDoDia(dados.dataInicio), fimDoDia(dados.dataFim), inicioDoDia(dados.dataInicio)]
+                  `INSERT INTO formulario (id_admin, nome, periodo_letivo, data_inicio, data_fim, status)
+                   VALUES (?, ?, ?, ?, ?, IF(? <= NOW(), 'ABERTO', 'NAO_INICIADO'))`,
+                  [id, dados.nome, dados.periodoLetivo, dados.inicio.valor, dados.fim.valor, dados.inicio.valor]
               );
             }
 
@@ -206,19 +244,24 @@ export async function editarDatasFormulario(req: Request, resposta: Response) {
         if (formulario.status === 'NAO_INICIADO') {
           await pool.query(
               'UPDATE formulario SET data_inicio = ?, data_fim = ? WHERE id_formulario = ?',
-              [inicioDoDia(datas.dataInicio), fimDoDia(datas.dataFim), formulario.id_formulario]
+              [datas.inicio.valor, datas.fim.valor, formulario.id_formulario]
           );
           // Inicio hoje ou antes: o programado abre agora
           await atualizarStatusFormularios();
         } else {
-          // Professores ja receberam o formulario com esse inicio
-          if (datas.dataInicio !== formulario.data_inicio) {
+          // Professores ja receberam o formulario com esse inicio. So o dia
+          // (07.3): compara o dia; com a hora: compara o minuto
+          const mesmoInicio = datas.inicio.soDia
+              ? datas.inicio.dia === formulario.data_inicio
+              : datas.inicio.valor.slice(0, 16) === formulario.inicio_minuto;
+
+          if (!mesmoInicio) {
             return resposta.status(409).json({ error: 'O formulário já foi aberto; a data de início não pode mudar' });
           }
 
           await pool.query(
               'UPDATE formulario SET data_fim = ? WHERE id_formulario = ?',
-              [fimDoDia(datas.dataFim), formulario.id_formulario]
+              [datas.fim.valor, formulario.id_formulario]
           );
         }
 
@@ -253,7 +296,7 @@ export async function abrirFormulario(req: Request, resposta: Response) {
         if (formulario.status === 'NAO_INICIADO') {
           await pool.query(
               `UPDATE formulario
-                  SET status = 'ABERTO', data_inicio = CURDATE(), iniciado_manualmente = TRUE
+                  SET status = 'ABERTO', data_inicio = DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:00'), iniciado_manualmente = TRUE
                 WHERE id_formulario = ?`,
               [formulario.id_formulario]
           );

@@ -1,30 +1,10 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection';
 import { TURNOS } from '../utils/validacoes';
+import { montarDiasDoTurno } from '../utils/dadosAcademicos';
 
 // Domingo fica de fora: nao ha aula aos domingos
 const DIAS_SEMANA = ['SEGUNDA', 'TERCA', 'QUARTA', 'QUINTA', 'SEXTA', 'SABADO'];
-
-// Dias do turno, em ordem da semana, indicando se ja sao usados
-async function montarDiasDoTurno(idAdmin: number, turno: string) {
-    const [rows]: any = await pool.query(
-        `SELECT d.id_dia_letivo, d.dia_semana,
-                (EXISTS (SELECT 1 FROM disponibilidade_horario x WHERE x.id_dia_letivo = d.id_dia_letivo)
-                 OR EXISTS (SELECT 1 FROM preferencia_turno x WHERE x.id_dia_letivo = d.id_dia_letivo)
-                 OR EXISTS (SELECT 1 FROM aula_alocada x WHERE x.id_dia_letivo = d.id_dia_letivo)) AS em_uso
-           FROM dia_letivo d
-          WHERE d.id_admin = ?
-            AND d.turno = ?
-          ORDER BY FIELD(d.dia_semana, 'SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO')`,
-        [idAdmin, turno]
-    );
-
-    return rows.map((linha: any) => ({
-        id: linha.id_dia_letivo,
-        diaSemana: linha.dia_semana,
-        emUso: linha.em_uso === 1,
-    }));
-}
 
 export async function listarDias(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
