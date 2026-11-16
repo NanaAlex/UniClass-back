@@ -121,7 +121,7 @@ export async function formularioAtual(req: Request, resposta: Response) {
 
     try {
         const [rows]: any = await pool.query(
-            `SELECT f.id_formulario, f.nome, f.periodo_letivo, f.status, f.data_inicio, f.data_fim,
+            `SELECT f.id_formulario, f.nome, f.status, f.data_inicio, f.data_fim,
                     r.id_resposta, r.status AS status_resposta, r.data_envio
                FROM formulario f
                JOIN vinculo_professor_admin v
@@ -146,7 +146,6 @@ export async function formularioAtual(req: Request, resposta: Response) {
             formulario: {
                 id: linha.id_formulario,
                 nome: linha.nome,
-                periodoLetivo: linha.periodo_letivo,
                 status: linha.status,
                 dataInicio: linha.data_inicio,
                 dataFim: linha.data_fim,
