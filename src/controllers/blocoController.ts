@@ -1,37 +1,10 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection';
 import { TURNOS } from '../utils/validacoes';
-
-const MINUTOS_NO_DIA = 24 * 60;
-
-// 'HH:MM' ou 'HH:MM:SS' (TIME do MySQL) -> minutos desde 00:00
-function paraMinutos(hora: string): number {
-    const [h, m] = hora.split(':').map(Number);
-    return h * 60 + m;
-}
-
-function paraHora(minutos: number): string {
-    const h = String(Math.floor(minutos / 60)).padStart(2, '0');
-    const m = String(minutos % 60).padStart(2, '0');
-    return `${h}:${m}`;
-}
-
-function horaValida(hora: any): boolean {
-    return typeof hora === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(hora);
-}
-
-function inteiroPositivo(valor: any): boolean {
-    return Number.isInteger(valor) && valor > 0;
-}
-
-// Horarios das aulas em sequencia, a partir do inicio do bloco
-function calcularAulas(inicio: number, duracaoAula: number, qtdAulas: number) {
-    return Array.from({ length: qtdAulas }, (_, i) => ({
-        numero: i + 1,
-        inicio: inicio + i * duracaoAula,
-        fim: inicio + (i + 1) * duracaoAula,
-    }));
-}
+import {
+    MINUTOS_NO_DIA, paraMinutos, paraHora, horaValida, inteiroPositivo, calcularAulas, montarBlocosDoTurno,
+    ERRO_TAMANHO_UNICO, tamanhosDosOutrosTurnos,
+} from '../utils/dadosAcademicos';
 
 function validarCorpoBloco(corpo: any): string | null {
     const { horaInicio, duracaoAula } = corpo;
@@ -99,53 +72,6 @@ async function blocosEmUso(idsBlocos: number[]): Promise<boolean> {
     return rows.length > 0;
 }
 
-// Configuracao do turno no formato devolvido ao front
-async function montarBlocosDoTurno(idAdmin: number, turno: string) {
-    const [rows]: any = await pool.query(
-        `SELECT b.id_bloco, b.ordem, b.qtd_aulas, b.hora_inicio AS bloco_inicio, b.hora_fim AS bloco_fim,
-                s.id_slot, s.numero_aula, s.hora_inicio, s.hora_fim,
-                (EXISTS (SELECT 1 FROM disponibilidade_horario d WHERE d.id_slot = s.id_slot)
-                 OR EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_slot = s.id_slot)) AS slot_em_uso
-           FROM bloco_aula b
-           LEFT JOIN slot_aula s ON s.id_bloco = b.id_bloco
-          WHERE b.id_admin = ?
-            AND b.turno = ?
-          ORDER BY b.ordem, s.numero_aula`,
-        [idAdmin, turno]
-    );
-
-    const blocos: any[] = [];
-
-    for (const linha of rows) {
-        let bloco = blocos.find((item) => item.id === linha.id_bloco);
-
-        if (!bloco) {
-            bloco = {
-                id: linha.id_bloco,
-                ordem: linha.ordem,
-                qtdAulas: linha.qtd_aulas,
-                inicio: linha.bloco_inicio,
-                fim: linha.bloco_fim,
-                emUso: false,
-                aulas: [],
-            };
-            blocos.push(bloco);
-        }
-
-        if (linha.id_slot !== null) {
-            bloco.aulas.push({
-                id: linha.id_slot,
-                aula: linha.numero_aula,
-                inicio: linha.hora_inicio,
-                fim: linha.hora_fim,
-            });
-            bloco.emUso = bloco.emUso || linha.slot_em_uso === 1;
-        }
-    }
-
-    return blocos;
-}
-
 // Apaga as aulas do bloco e grava novamente com os horarios calculados
 async function regravarAulas(conexao: any, idBloco: number, inicio: number, duracaoAula: number, qtdAulas: number) {
     const aulas = calcularAulas(inicio, duracaoAula, qtdAulas);
@@ -210,8 +136,17 @@ export async function criarBloco(req: Request, resposta: Response) {
               });
             }
             qtd = anterior.qtd_aulas;
-        } else if (qtd === undefined) {
-            return resposta.status(400).json({ error: 'Informe a quantidade de aulas do bloco' });
+        } else {
+            // Primeiro bloco do turno: o tamanho e o dos outros turnos (escalonador, K unico)
+            const [tamanho] = await tamanhosDosOutrosTurnos(pool, id, turno);
+            if (tamanho !== undefined) {
+                if (qtdAulas !== undefined && qtdAulas !== tamanho) {
+                  return resposta.status(400).json({ error: `${ERRO_TAMANHO_UNICO}; os outros turnos têm ${tamanho}` });
+                }
+                qtd = tamanho;
+            } else if (qtd === undefined) {
+                return resposta.status(400).json({ error: 'Informe a quantidade de aulas do bloco' });
+            }
         }
 
         const inicio = paraMinutos(horaInicio);
@@ -341,30 +276,34 @@ export async function alterarTamanhoBlocos(req: Request, resposta: Response) {
     }
 
     try {
-        const blocos = await buscarBlocosDoTurno(id, turno);
+        // O tamanho e unico em todos os turnos (escalonador, K): muda os blocos de todos
+        const porTurno = await Promise.all(TURNOS.map(async (nome) => ({ nome, blocos: await buscarBlocosDoTurno(id, nome) })));
+        const blocos = porTurno.flatMap((item) => item.blocos);
 
-        if (blocos.length === 0) {
+        if (porTurno.find((item) => item.nome === turno)!.blocos.length === 0) {
           return resposta.status(404).json({ error: 'Não há blocos cadastrados neste turno' });
         }
 
         if (await blocosEmUso(blocos.map((item: any) => item.id_bloco))) {
           return resposta.status(409).json({
-            error: 'Há blocos deste turno usados em respostas de professores ou em horários gerados; o tamanho não pode ser alterado',
+            error: 'Há blocos usados em respostas de professores ou em horários gerados; o tamanho não pode ser alterado',
           });
         }
 
         // Cada bloco mantem inicio e duracao; so o fim muda
-        for (let i = 0; i < blocos.length; i++) {
-            const fim = paraMinutos(blocos[i].hora_inicio) + qtdAulas * blocos[i].duracao_aula;
-            const proximo = blocos[i + 1];
+        for (const { nome, blocos: doTurno } of porTurno) {
+            for (let i = 0; i < doTurno.length; i++) {
+                const fim = paraMinutos(doTurno[i].hora_inicio) + qtdAulas * doTurno[i].duracao_aula;
+                const proximo = doTurno[i + 1];
 
-            if (fim >= MINUTOS_NO_DIA) {
-              return resposta.status(400).json({ error: `Com ${qtdAulas} aulas, o bloco ${blocos[i].ordem} terminaria depois da meia-noite` });
-            }
-            if (proximo && fim >= paraMinutos(proximo.hora_inicio)) {
-              return resposta.status(400).json({
-                error: `Com ${qtdAulas} aulas, o bloco ${blocos[i].ordem} invadiria o intervalo antes do bloco ${proximo.ordem}`,
-              });
+                if (fim >= MINUTOS_NO_DIA) {
+                  return resposta.status(400).json({ error: `Com ${qtdAulas} aulas, o bloco ${doTurno[i].ordem} do turno ${nome} terminaria depois da meia-noite` });
+                }
+                if (proximo && fim >= paraMinutos(proximo.hora_inicio)) {
+                  return resposta.status(400).json({
+                    error: `Com ${qtdAulas} aulas, o bloco ${doTurno[i].ordem} do turno ${nome} invadiria o intervalo antes do bloco ${proximo.ordem}`,
+                  });
+                }
             }
         }
 
@@ -386,7 +325,7 @@ export async function alterarTamanhoBlocos(req: Request, resposta: Response) {
         }
 
         return resposta.json({
-            message: 'Quantidade de aulas dos blocos alterada',
+            message: 'Quantidade de aulas dos blocos alterada em todos os turnos',
             turno,
             blocos: await montarBlocosDoTurno(id, turno),
         });

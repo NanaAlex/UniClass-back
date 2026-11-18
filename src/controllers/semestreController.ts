@@ -1,51 +1,6 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection';
-
-// Semestres do admin em ordem de criacao (numero = posicao)
-async function montarSemestres(idAdmin: number) {
-    const [rows]: any = await pool.query(
-        `SELECT s.id_semestre, s.nome, s.periodo_letivo,
-                (EXISTS (SELECT 1 FROM materia m WHERE m.id_semestre = s.id_semestre)
-                 OR EXISTS (SELECT 1 FROM formulario f WHERE f.id_semestre = s.id_semestre)
-                 OR EXISTS (SELECT 1 FROM geracao_horario g WHERE g.id_semestre = s.id_semestre)
-                 OR EXISTS (SELECT 1 FROM turma t
-                             WHERE t.id_semestre = s.id_semestre
-                               AND (EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_turma = t.id_turma)
-                                    OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_turma = t.id_turma)))) AS em_uso
-           FROM semestre s
-          WHERE s.id_admin = ?
-          ORDER BY s.id_semestre`,
-        [idAdmin]
-    );
-
-    // CU-019: turmas de todos os semestres numa consulta so, agrupadas abaixo
-    const [turmas]: any = await pool.query(
-        `SELECT t.id_turma, t.id_semestre, t.nome, t.turno,
-                (EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_turma = t.id_turma)
-                 OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_turma = t.id_turma)) AS em_uso
-           FROM turma t
-           JOIN semestre s ON s.id_semestre = t.id_semestre
-          WHERE s.id_admin = ?
-          ORDER BY t.nome`,
-        [idAdmin]
-    );
-
-    return rows.map((linha: any, i: number) => ({
-        id: linha.id_semestre,
-        numero: i + 1,
-        nome: linha.nome,
-        periodoLetivo: linha.periodo_letivo,
-        emUso: linha.em_uso === 1,
-        turmas: turmas
-            .filter((turma: any) => turma.id_semestre === linha.id_semestre)
-            .map((turma: any) => ({
-                id: turma.id_turma,
-                nome: turma.nome,
-                turno: turma.turno,
-                emUso: turma.em_uso === 1,
-            })),
-    }));
-}
+import { montarSemestres } from '../utils/dadosAcademicos';
 
 export async function listarSemestres(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
