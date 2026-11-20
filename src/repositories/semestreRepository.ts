@@ -53,6 +53,14 @@ export async function contarPorAdmin(idAdmin: number): Promise<number> {
     return rows[0].total;
 }
 
+export async function existeDoAdmin(idAdmin: number, idSemestre: number): Promise<boolean> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+        'SELECT id_semestre FROM semestre WHERE id_semestre = ? AND id_admin = ?',
+        [idSemestre, idAdmin]
+    );
+    return rows.length > 0;
+}
+
 export async function inserir(idAdmin: number, nome: string): Promise<void> {
     await pool.query('INSERT INTO semestre (id_admin, nome) VALUES (?, ?)', [idAdmin, nome]);
 }
