@@ -7,7 +7,7 @@ import { listarSemestres, criarSemestre, excluirSemestre }                      
 import { convidarProfessores }                                                        from "../controllers/conviteController";
 import {
   listarProfessores, dadosProfessor, verRespostaProfessor, verHorarioProfessor, listarSolicitacoesProfessor,
-  verSolicitacaoFormulario, decidirSolicitacaoFormulario, alterarStatusConta,
+  verSolicitacaoFormulario, decidirSolicitacaoFormulario, alterarStatusConta, fotoProfessor,
   marcarSolicitacaoHorarioComoLida,
 } from "../controllers/gestaoProfessorController";
 import { adicionarTurma, alterarTurnoTurma, retirarTurma }                          from "../controllers/turmaController";
@@ -46,6 +46,7 @@ router.delete('/semestres/:idSemestre', excluirSemestre);
 // gestao de professores
 router.get('/professores', listarProfessores);
 router.get('/professores/:idProfessor', dadosProfessor);
+router.get('/professores/:idProfessor/foto', fotoProfessor);
 router.get('/professores/:idProfessor/formularios/:idFormulario/resposta', verRespostaProfessor);
 router.get('/professores/:idProfessor/horario', verHorarioProfessor);
 router.get('/professores/:idProfessor/solicitacoes', listarSolicitacoesProfessor);
