@@ -1,7 +1,7 @@
 import { RowDataPacket } from 'mysql2/promise';
 import pool from '../database/connection';
 import { Consulta } from '../database/transacao';
-import { MATERIA_EM_USO } from '../utils/dadosAcademicos';
+import { MATERIA_EM_USO } from './materiaRepository';
 import { TURMA_EM_USO } from './turmaRepository';
 
 export interface SemestreGravado {

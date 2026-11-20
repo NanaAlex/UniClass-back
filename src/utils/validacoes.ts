@@ -20,3 +20,12 @@ export function lerTurno(valor: unknown): string | null {
   const turno = typeof valor === 'string' ? valor.toUpperCase() : null;
   return turno && TURNOS.includes(turno) ? turno : null;
 }
+
+export function inteiroPositivo(valor: unknown): valor is number {
+  return Number.isInteger(valor) && (valor as number) > 0;
+}
+
+// Quantidades da tela (aulas por semana, professores, aulas por bloco): 1 a 99
+export function quantidadeValida(valor: unknown): valor is number {
+  return Number.isInteger(valor) && (valor as number) >= 1 && (valor as number) <= 99;
+}

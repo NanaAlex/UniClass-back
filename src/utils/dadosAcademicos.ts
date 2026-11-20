@@ -95,38 +95,3 @@ export async function montarBlocosDoTurno(idAdmin: number, turno: string) {
 
     return blocos;
 }
-
-// Disciplina em uso: interesse em resposta do formulario, aula alocada ou pendencia de geracao
-export const MATERIA_EM_USO = `(EXISTS (SELECT 1 FROM interesse_materia i WHERE i.id_materia = m.id_materia)
-                 OR EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_materia = m.id_materia)
-                 OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_materia = m.id_materia))`;
-
-// Disciplinas do admin, na ordem dos semestres e por nome; filtro opcional por semestres
-export async function montarMaterias(idAdmin: number, semestres: number[] | null = null) {
-    const [rows]: any = await pool.query(
-        `SELECT m.id_materia, m.nome, m.qtd_aulas_semana, m.qtd_professores,
-                s.id_semestre, s.numero, s.nome AS nome_semestre,
-                ${MATERIA_EM_USO} AS em_uso
-           FROM materia m
-           JOIN (SELECT id_semestre, nome, ROW_NUMBER() OVER (ORDER BY id_semestre) AS numero
-                   FROM semestre
-                  WHERE id_admin = ?) s ON s.id_semestre = m.id_semestre
-          WHERE m.ativo = TRUE
-            ${semestres ? 'AND m.id_semestre IN (?)' : ''}
-          ORDER BY s.numero, m.nome`,
-        semestres ? [idAdmin, semestres] : [idAdmin]
-    );
-
-    return rows.map((linha: any) => ({
-        id: linha.id_materia,
-        nome: linha.nome,
-        qtdAulasSemana: linha.qtd_aulas_semana,
-        qtdProfessores: linha.qtd_professores,
-        semestre: {
-            id: linha.id_semestre,
-            numero: Number(linha.numero),
-            nome: linha.nome_semestre,
-        },
-        emUso: linha.em_uso === 1,
-    }));
-}

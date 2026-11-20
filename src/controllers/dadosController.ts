@@ -3,9 +3,11 @@ import pool from '../database/connection';
 import { DIAS_SEMANA, TURNOS } from '../utils/validacoes';
 import * as diaLetivoRepository from '../repositories/diaLetivoRepository';
 import * as semestreService from '../services/semestreService';
+import * as materiaRepository from '../repositories/materiaRepository';
+import { MATERIA_EM_USO } from '../repositories/materiaRepository';
 import {
-    ERRO_TAMANHO_UNICO, MATERIA_EM_USO, MINUTOS_NO_DIA, calcularAulas, horaValida, inteiroPositivo,
-    montarBlocosDoTurno, montarMaterias, paraHora, paraMinutos,
+    ERRO_TAMANHO_UNICO, MINUTOS_NO_DIA, calcularAulas, horaValida, inteiroPositivo,
+    montarBlocosDoTurno, paraHora, paraMinutos,
 } from '../utils/dadosAcademicos';
 
 const LETRA_TURMA = /^[A-Z]$/;
@@ -40,7 +42,7 @@ async function montarDados(idAdmin: number) {
             blocos: await montarBlocosDoTurno(idAdmin, turno),
         }))),
         semestreService.listarSemestres(idAdmin),
-        montarMaterias(idAdmin),
+        materiaRepository.listarPorAdmin(idAdmin),
     ]);
 
     return { turnos, semestres, materias };
