@@ -127,7 +127,16 @@ export async function montarSemestres(idAdmin: number) {
                  OR EXISTS (SELECT 1 FROM turma t
                              WHERE t.id_semestre = s.id_semestre
                                AND (EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_turma = t.id_turma)
-                                    OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_turma = t.id_turma)))) AS em_uso
+                                    OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_turma = t.id_turma)))) AS em_uso,
+                -- Regra do PUT /admin/dados, que antes apaga as disciplinas e turmas livres:
+                -- so trava o que continua preso ao semestre
+                (EXISTS (SELECT 1 FROM formulario f WHERE f.id_semestre = s.id_semestre)
+                 OR EXISTS (SELECT 1 FROM geracao_horario g WHERE g.id_semestre = s.id_semestre)
+                 OR EXISTS (SELECT 1 FROM materia m WHERE m.id_semestre = s.id_semestre AND ${MATERIA_EM_USO})
+                 OR EXISTS (SELECT 1 FROM turma t
+                             WHERE t.id_semestre = s.id_semestre
+                               AND (EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_turma = t.id_turma)
+                                    OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_turma = t.id_turma)))) AS exclusao_bloqueada
            FROM semestre s
           WHERE s.id_admin = ?
           ORDER BY s.id_semestre`,
@@ -152,6 +161,7 @@ export async function montarSemestres(idAdmin: number) {
         nome: linha.nome,
         periodoLetivo: linha.periodo_letivo,
         emUso: linha.em_uso === 1,
+        exclusaoBloqueada: linha.exclusao_bloqueada === 1,
         turmas: turmas
             .filter((turma: any) => turma.id_semestre === linha.id_semestre)
             .map((turma: any) => ({
