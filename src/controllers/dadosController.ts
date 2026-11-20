@@ -1,14 +1,13 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection';
-import { DIAS_SEMANA, TURNOS } from '../utils/validacoes';
+import { DIAS_SEMANA, TURNOS, inteiroPositivo } from '../utils/validacoes';
 import * as diaLetivoRepository from '../repositories/diaLetivoRepository';
 import * as semestreService from '../services/semestreService';
 import * as materiaRepository from '../repositories/materiaRepository';
 import { MATERIA_EM_USO } from '../repositories/materiaRepository';
-import {
-    ERRO_TAMANHO_UNICO, MINUTOS_NO_DIA, calcularAulas, horaValida, inteiroPositivo,
-    montarBlocosDoTurno, paraHora, paraMinutos,
-} from '../utils/dadosAcademicos';
+import * as blocoRepository from '../repositories/blocoRepository';
+import { ERRO_TAMANHO_UNICO } from '../services/blocoService';
+import { MINUTOS_NO_DIA, calcularAulas, horaValida, paraHora, paraMinutos } from '../utils/horas';
 
 const LETRA_TURMA = /^[A-Z]$/;
 
@@ -39,7 +38,7 @@ async function montarDados(idAdmin: number) {
         Promise.all(TURNOS.map(async (turno) => ({
             turno,
             dias: await diaLetivoRepository.listarPorTurno(idAdmin, turno),
-            blocos: await montarBlocosDoTurno(idAdmin, turno),
+            blocos: await blocoRepository.listarPorTurno(idAdmin, turno),
         }))),
         semestreService.listarSemestres(idAdmin),
         materiaRepository.listarPorAdmin(idAdmin),
