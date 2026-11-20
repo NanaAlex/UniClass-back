@@ -1,8 +1,9 @@
 import pool from '../database/connection';
 
 // Consultas e calculos da configuracao do administrador (aba Dados, CU-015 a
-// CU-022) que ainda nao passaram para as camadas (services/repositories).
-// Dias letivos ja estao em diaLetivoRepository.
+// CU-022). Usados pelos controllers de cada assunto (dias, blocos, semestres,
+// disciplinas) e pela rota unica da aba (dadosController), no formato que as
+// rotas devolvem ao front.
 
 export const MINUTOS_NO_DIA = 24 * 60;
 
@@ -93,62 +94,6 @@ export async function montarBlocosDoTurno(idAdmin: number, turno: string) {
     }
 
     return blocos;
-}
-
-// Semestres do admin em ordem de criacao (numero = posicao)
-export async function montarSemestres(idAdmin: number) {
-    const [rows]: any = await pool.query(
-        `SELECT s.id_semestre, s.nome, s.periodo_letivo,
-                (EXISTS (SELECT 1 FROM materia m WHERE m.id_semestre = s.id_semestre)
-                 OR EXISTS (SELECT 1 FROM formulario f WHERE f.id_semestre = s.id_semestre)
-                 OR EXISTS (SELECT 1 FROM geracao_horario g WHERE g.id_semestre = s.id_semestre)
-                 OR EXISTS (SELECT 1 FROM turma t
-                             WHERE t.id_semestre = s.id_semestre
-                               AND (EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_turma = t.id_turma)
-                                    OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_turma = t.id_turma)))) AS em_uso,
-                -- Regra do PUT /admin/dados, que antes apaga as disciplinas e turmas livres:
-                -- so trava o que continua preso ao semestre
-                (EXISTS (SELECT 1 FROM formulario f WHERE f.id_semestre = s.id_semestre)
-                 OR EXISTS (SELECT 1 FROM geracao_horario g WHERE g.id_semestre = s.id_semestre)
-                 OR EXISTS (SELECT 1 FROM materia m WHERE m.id_semestre = s.id_semestre AND ${MATERIA_EM_USO})
-                 OR EXISTS (SELECT 1 FROM turma t
-                             WHERE t.id_semestre = s.id_semestre
-                               AND (EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_turma = t.id_turma)
-                                    OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_turma = t.id_turma)))) AS exclusao_bloqueada
-           FROM semestre s
-          WHERE s.id_admin = ?
-          ORDER BY s.id_semestre`,
-        [idAdmin]
-    );
-
-    // CU-019: turmas de todos os semestres numa consulta so, agrupadas abaixo
-    const [turmas]: any = await pool.query(
-        `SELECT t.id_turma, t.id_semestre, t.nome, t.turno,
-                (EXISTS (SELECT 1 FROM aula_alocada a WHERE a.id_turma = t.id_turma)
-                 OR EXISTS (SELECT 1 FROM pendencia_geracao p WHERE p.id_turma = t.id_turma)) AS em_uso
-           FROM turma t
-           JOIN semestre s ON s.id_semestre = t.id_semestre
-          WHERE s.id_admin = ?
-          ORDER BY t.nome`,
-        [idAdmin]
-    );
-
-    return rows.map((linha: any, i: number) => ({
-        id: linha.id_semestre,
-        numero: i + 1,
-        nome: linha.nome,
-        periodoLetivo: linha.periodo_letivo,
-        emUso: linha.em_uso === 1,
-        exclusaoBloqueada: linha.exclusao_bloqueada === 1,
-        turmas: turmas
-            .filter((turma: any) => turma.id_semestre === linha.id_semestre)
-            .map((turma: any) => ({
-                id: turma.id_turma,
-                nome: turma.nome,
-                turno: turma.turno,
-                emUso: turma.em_uso === 1,
-            })),
-    }));
 }
 
 // Disciplina em uso: interesse em resposta do formulario, aula alocada ou pendencia de geracao
