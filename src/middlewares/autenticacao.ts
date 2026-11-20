@@ -2,6 +2,22 @@ import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import pool from '../database/connection';
 
+// Usuario da sessao, preenchido por verificarSessao em resposta.locals.usuario
+export interface UsuarioDaSessao {
+    id: number;
+    tipoUsuario: 'ADMINISTRADOR' | 'PROFESSOR';
+    idSessao: number;
+}
+
+declare global {
+    // eslint-disable-next-line @typescript-eslint/no-namespace
+    namespace Express {
+        interface Locals {
+            usuario: UsuarioDaSessao;
+        }
+    }
+}
+
 export async function verificarSessao(req: Request, resposta: Response, proximo: NextFunction) {
 
     const cabecalho = req.headers.authorization;
