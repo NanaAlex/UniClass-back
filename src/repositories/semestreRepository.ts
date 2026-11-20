@@ -1,4 +1,4 @@
-import { RowDataPacket } from 'mysql2/promise';
+import { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import pool from '../database/connection';
 import { Consulta } from '../database/transacao';
 import { MATERIA_EM_USO } from './materiaRepository';
@@ -61,8 +61,31 @@ export async function existeDoAdmin(idAdmin: number, idSemestre: number): Promis
     return rows.length > 0;
 }
 
-export async function inserir(idAdmin: number, nome: string): Promise<void> {
-    await pool.query('INSERT INTO semestre (id_admin, nome) VALUES (?, ?)', [idAdmin, nome]);
+export async function inserir(idAdmin: number, nome: string, consulta: Consulta = pool): Promise<number> {
+    const [resultado] = await consulta.query<ResultSetHeader>('INSERT INTO semestre (id_admin, nome) VALUES (?, ?)', [idAdmin, nome]);
+    return resultado.insertId;
+}
+
+// Ids dos semestres do admin em ordem de criacao (a posicao e o numero)
+export async function listarIds(idAdmin: number, consulta: Consulta = pool): Promise<number[]> {
+    const [rows] = await consulta.query<RowDataPacket[]>(
+        'SELECT id_semestre FROM semestre WHERE id_admin = ? ORDER BY id_semestre',
+        [idAdmin]
+    );
+    return rows.map((linha) => linha.id_semestre);
+}
+
+// Algo ainda preso ao semestre na gravacao da aba Dados, depois de apagar as
+// disciplinas e turmas que saem
+export async function temDependencias(idSemestre: number, consulta: Consulta = pool): Promise<boolean> {
+    const [[uso]] = await consulta.query<RowDataPacket[]>(
+        `SELECT (EXISTS (SELECT 1 FROM materia m WHERE m.id_semestre = ?)
+                 OR EXISTS (SELECT 1 FROM formulario f WHERE f.id_semestre = ?)
+                 OR EXISTS (SELECT 1 FROM geracao_horario g WHERE g.id_semestre = ?)
+                 OR EXISTS (SELECT 1 FROM turma t WHERE t.id_semestre = ?)) AS em_uso`,
+        [idSemestre, idSemestre, idSemestre, idSemestre]
+    );
+    return uso.em_uso === 1;
 }
 
 export async function excluir(idSemestre: number, consulta: Consulta = pool): Promise<void> {

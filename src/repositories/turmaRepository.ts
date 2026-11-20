@@ -86,12 +86,30 @@ export async function inserir(idSemestre: number, nome: string, turno: string): 
     }
 }
 
-export async function alterarTurno(idTurma: number, turno: string): Promise<void> {
-    await pool.query('UPDATE turma SET turno = ? WHERE id_turma = ?', [turno, idTurma]);
+export async function alterarTurno(idTurma: number, turno: string, consulta: Consulta = pool): Promise<void> {
+    await consulta.query('UPDATE turma SET turno = ? WHERE id_turma = ?', [turno, idTurma]);
 }
 
-export async function excluir(idTurma: number): Promise<void> {
-    await pool.query('DELETE FROM turma WHERE id_turma = ?', [idTurma]);
+export async function excluir(idTurma: number, consulta: Consulta = pool): Promise<void> {
+    await consulta.query('DELETE FROM turma WHERE id_turma = ?', [idTurma]);
+}
+
+// Turmas do admin para a gravacao da aba Dados (sem ordem definida)
+export async function listarParaSincronizar(idAdmin: number, consulta: Consulta = pool): Promise<TurmaDoSemestre[]> {
+    const [rows] = await consulta.query<RowDataPacket[]>(
+        `SELECT t.id_turma, t.id_semestre, t.nome, t.turno, ${TURMA_EM_USO} AS em_uso
+           FROM turma t
+           JOIN semestre s ON s.id_semestre = t.id_semestre
+          WHERE s.id_admin = ?`,
+        [idAdmin]
+    );
+
+    return rows.map(paraTurmaDoSemestre);
+}
+
+// Varias turmas numa consulta so: [idSemestre, nome, turno]
+export async function inserirVarias(turmas: [number, string, string][], consulta: Consulta = pool): Promise<void> {
+    await consulta.query('INSERT INTO turma (id_semestre, nome, turno) VALUES ?', [turmas]);
 }
 
 export async function excluirPorSemestre(idSemestre: number, consulta: Consulta = pool): Promise<void> {
