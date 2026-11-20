@@ -11,3 +11,12 @@ export const emailValido = (email: string): boolean =>
 // Turnos aceitos em dia_letivo, bloco_aula e materia
 // Turnos aceitos pela API (dias letivos, blocos e turmas), os mesmos do ENUM do banco
 export const TURNOS = ['MANHA', 'TARDE', 'NOITE'];
+
+// Dias aceitos em dia_letivo; domingo fica de fora: nao ha aula aos domingos
+export const DIAS_SEMANA = ['SEGUNDA', 'TERCA', 'QUARTA', 'QUINTA', 'SEXTA', 'SABADO'];
+
+// Turno recebido do front em maiusculas, ou null se invalido
+export function lerTurno(valor: unknown): string | null {
+  const turno = typeof valor === 'string' ? valor.toUpperCase() : null;
+  return turno && TURNOS.includes(turno) ? turno : null;
+}
