@@ -1,13 +1,12 @@
 import { Request, Response } from 'express';
 import pool from '../database/connection';
-import { TURNOS } from '../utils/validacoes';
+import { DIAS_SEMANA, TURNOS } from '../utils/validacoes';
+import * as diaLetivoRepository from '../repositories/diaLetivoRepository';
 import {
     ERRO_TAMANHO_UNICO, MATERIA_EM_USO, MINUTOS_NO_DIA, calcularAulas, horaValida, inteiroPositivo,
-    montarBlocosDoTurno, montarDiasDoTurno, montarMaterias, montarSemestres, paraHora, paraMinutos,
+    montarBlocosDoTurno, montarMaterias, montarSemestres, paraHora, paraMinutos,
 } from '../utils/dadosAcademicos';
 
-// Domingo fica de fora: nao ha aula aos domingos
-const DIAS_SEMANA = ['SEGUNDA', 'TERCA', 'QUARTA', 'QUINTA', 'SEXTA', 'SABADO'];
 const LETRA_TURMA = /^[A-Z]$/;
 
 const quantidadeValida = (valor: any) => Number.isInteger(valor) && valor >= 1 && valor <= 99;
@@ -36,7 +35,7 @@ async function montarDados(idAdmin: number) {
     const [turnos, semestres, materias] = await Promise.all([
         Promise.all(TURNOS.map(async (turno) => ({
             turno,
-            dias: await montarDiasDoTurno(idAdmin, turno),
+            dias: await diaLetivoRepository.listarPorTurno(idAdmin, turno),
             blocos: await montarBlocosDoTurno(idAdmin, turno),
         }))),
         montarSemestres(idAdmin),

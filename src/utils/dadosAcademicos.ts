@@ -1,9 +1,8 @@
 import pool from '../database/connection';
 
 // Consultas e calculos da configuracao do administrador (aba Dados, CU-015 a
-// CU-022). Usados pelos controllers de cada assunto (dias, blocos, semestres,
-// disciplinas) e pela rota unica da aba (dadosController), no formato que as
-// rotas devolvem ao front.
+// CU-022) que ainda nao passaram para as camadas (services/repositories).
+// Dias letivos ja estao em diaLetivoRepository.
 
 export const MINUTOS_NO_DIA = 24 * 60;
 
@@ -94,27 +93,6 @@ export async function montarBlocosDoTurno(idAdmin: number, turno: string) {
     }
 
     return blocos;
-}
-
-// Dias do turno, em ordem da semana, indicando se ja sao usados
-export async function montarDiasDoTurno(idAdmin: number, turno: string) {
-    const [rows]: any = await pool.query(
-        `SELECT d.id_dia_letivo, d.dia_semana,
-                (EXISTS (SELECT 1 FROM disponibilidade_horario x WHERE x.id_dia_letivo = d.id_dia_letivo)
-                 OR EXISTS (SELECT 1 FROM preferencia_turno x WHERE x.id_dia_letivo = d.id_dia_letivo)
-                 OR EXISTS (SELECT 1 FROM aula_alocada x WHERE x.id_dia_letivo = d.id_dia_letivo)) AS em_uso
-           FROM dia_letivo d
-          WHERE d.id_admin = ?
-            AND d.turno = ?
-          ORDER BY FIELD(d.dia_semana, 'SEGUNDA','TERCA','QUARTA','QUINTA','SEXTA','SABADO')`,
-        [idAdmin, turno]
-    );
-
-    return rows.map((linha: any) => ({
-        id: linha.id_dia_letivo,
-        diaSemana: linha.dia_semana,
-        emUso: linha.em_uso === 1,
-    }));
 }
 
 // Semestres do admin em ordem de criacao (numero = posicao)
