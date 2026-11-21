@@ -27,7 +27,7 @@ async function buscarFormularioAcessivel(idProfessor: number, idFormulario: numb
 */
 async function buscarFormularioVinculado(idProfessor: number, idFormulario: number) {
     const [rows]: any = await pool.query(
-        `SELECT f.id_formulario, f.nome, f.status, f.data_inicio, f.data_fim, f.id_admin
+        `SELECT f.id_formulario, f.nome, f.status, f.data_inicio, f.data_fim, f.id_admin, f.id_semestre
              FROM formulario f
              JOIN vinculo_professor_admin v
                ON v.id_admin = f.id_admin
@@ -199,8 +199,9 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
           [formulario.id_admin]
         );
 
-        // Migration 004: o formulário não tem semestre; vale para as
-        // matérias de todos os semestres do administrador (RF 2.5)
+        // Migration 004: o formulário sem semestre vale para as matérias de todos
+        // os semestres ativos do administrador (RF 2.5); o formulário antigo que
+        // manteve o semestre, só para as dele (RN-15, RN-36)
         const [materias]: any = await pool.query(
           `SELECT m.id_materia, m.nome, m.qtd_aulas_semana, m.qtd_professores,
                   s.id_semestre, s.nome AS semestre,
@@ -209,9 +210,11 @@ export async function dadosDoFormulario(req: Request, resposta: Response) {
              FROM materia m
              JOIN semestre s ON s.id_semestre = m.id_semestre
             WHERE s.id_admin = ?
+              AND s.ativo = TRUE
               AND m.ativo = TRUE
+              AND (? IS NULL OR m.id_semestre = ?)
             ORDER BY s.id_semestre, m.nome`,
-          [formulario.id_admin]
+          [formulario.id_admin, formulario.id_semestre, formulario.id_semestre]
         );
 
           return resposta.json({
@@ -301,13 +304,15 @@ export async function enviarResposta(req: Request, resposta: Response) {
           [formulario.id_admin]
         );
 
-        // Migration 004: matérias de todos os semestres do administrador
+        // Migration 004: mesmo critério do dadosDoFormulario (semestres ativos do
+        // administrador; formulário antigo com semestre, só as dele)
         const [materiasValidas]: any = await pool.query(
           `SELECT m.id_materia
              FROM materia m
              JOIN semestre s ON s.id_semestre = m.id_semestre
-            WHERE s.id_admin = ? AND m.ativo = TRUE`,
-          [formulario.id_admin]
+            WHERE s.id_admin = ? AND s.ativo = TRUE AND m.ativo = TRUE
+              AND (? IS NULL OR m.id_semestre = ?)`,
+          [formulario.id_admin, formulario.id_semestre, formulario.id_semestre]
         );
 
         const { disponibilidades, preferenciasTurno, interesses } = req.body;
@@ -330,6 +335,18 @@ export async function enviarResposta(req: Request, resposta: Response) {
             return resposta.status(400).json({
             error: 'A resposta contém dias, horários ou matérias que não pertencem a este formulário',
           });
+        }
+
+        // RN-17, RN-22, CA-27: cada dia/turno com disponibilidade marcada exige
+        // a sua nota de prioridade; nenhuma nota é presumida
+        const diasComDisponibilidade = new Set(
+            disponibilidades.filter((item: any) => item.disponivel === true).map((item: any) => item.idDiaLetivo)
+        );
+        const diasComNota = new Set(preferenciasTurno.map((item: any) => item.idDiaLetivo));
+        if ([...diasComDisponibilidade].some((idDia) => !diasComNota.has(idDia))) {
+            return resposta.status(400).json({
+              error: 'Informe a nota de prioridade de cada dia e turno em que marcou disponibilidade',
+            });
         }
 
          const conexao = await pool.getConnection();
