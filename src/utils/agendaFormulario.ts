@@ -1,20 +1,9 @@
-import pool from '../database/connection';
+import * as formularioRepository from '../repositories/formularioRepository';
 
 // RF 2.8: abre os formularios programados que chegaram ao inicio e encerra os
 // abertos que passaram do termino (horario do MySQL, RNF 9)
 export async function atualizarStatusFormularios() {
-    await pool.query(
-        `UPDATE formulario
-            SET status = 'ABERTO'
-          WHERE status = 'NAO_INICIADO'
-            AND data_inicio <= NOW()`
-    );
-    await pool.query(
-        `UPDATE formulario
-            SET status = 'ENCERRADO'
-          WHERE status = 'ABERTO'
-            AND data_fim < NOW()`
-    );
+    await formularioRepository.atualizarStatusPelaData();
 }
 
 // Confere a cada minuto

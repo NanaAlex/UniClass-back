@@ -1,89 +1,37 @@
 import { Request, Response } from 'express';
-import pool from '../database/connection';
-import { montarSemestres } from '../utils/dadosAcademicos';
+import { responderErro } from '../erros/responderErro';
+import * as semestreService from '../services/semestreService';
 
 export async function listarSemestres(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
 
     try {
-        return resposta.json({ semestres: await montarSemestres(id) });
-    } catch (error) {
-        console.error('Erro ao listar semestres:', error);
-        return resposta.status(500).json({ error: 'Erro interno ao listar os semestres' });
+        return resposta.json({ semestres: await semestreService.listarSemestres(id) });
+    } catch (erro) {
+        return responderErro(resposta, erro, 'Erro ao listar semestres:', 'Erro interno ao listar os semestres');
     }
 }
 
-// CU-018: o "+" cria o proximo semestre da sequencia (1o, 2o, 3o...)
+// CU-018
 export async function criarSemestre(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
 
     try {
-        const [contagem]: any = await pool.query(
-            'SELECT COUNT(*) AS total FROM semestre WHERE id_admin = ?',
-            [id]
-        );
-        const numero = contagem[0].total + 1;
-
-        await pool.query(
-            'INSERT INTO semestre (id_admin, nome) VALUES (?, ?)',
-            [id, `${numero}º Semestre`]
-        );
-
-        return resposta.status(201).json({
-            message: 'Semestre criado',
-            semestres: await montarSemestres(id),
-        });
-    } catch (error) {
-        console.error('Erro ao criar semestre:', error);
-        return resposta.status(500).json({ error: 'Erro interno ao criar o semestre' });
+        const semestres = await semestreService.criarSemestre(id);
+        return resposta.status(201).json({ message: 'Semestre criado', semestres });
+    } catch (erro) {
+        return responderErro(resposta, erro, 'Erro ao criar semestre:', 'Erro interno ao criar o semestre');
     }
 }
 
-// CU-018: exclui o ultimo semestre, junto com as turmas dele
+// CU-018
 export async function excluirSemestre(req: Request, resposta: Response) {
     const { id } = resposta.locals.usuario;
-    const idSemestre = Number(req.params.idSemestre);
 
     try {
-        const semestres = await montarSemestres(id);
-        const semestre = semestres.find((item: any) => item.id === idSemestre);
-
-        if (!semestre) {
-          return resposta.status(404).json({ error: 'Semestre não encontrado' });
-        }
-
-        // Excluir do meio renumeraria semestres que ja tem materias e formularios
-        if (semestre.numero !== semestres.length) {
-          return resposta.status(409).json({ error: 'Apenas o último semestre pode ser excluído' });
-        }
-
-        // CU-018 A2: dependencias impedem a exclusao
-        if (semestre.emUso) {
-          return resposta.status(409).json({
-            error: 'Este semestre possui matérias, formulários, horários ou turmas em uso e não pode ser excluído',
-          });
-        }
-
-        const conexao = await pool.getConnection();
-
-        try {
-            await conexao.beginTransaction();
-            await conexao.query('DELETE FROM turma WHERE id_semestre = ?', [idSemestre]);
-            await conexao.query('DELETE FROM semestre WHERE id_semestre = ?', [idSemestre]);
-            await conexao.commit();
-        } catch (error) {
-            await conexao.rollback();
-            throw error;
-        } finally {
-            conexao.release();
-        }
-
-        return resposta.json({
-            message: 'Semestre excluído',
-            semestres: await montarSemestres(id),
-        });
-    } catch (error) {
-        console.error('Erro ao excluir semestre:', error);
-        return resposta.status(500).json({ error: 'Erro interno ao excluir o semestre' });
+        const semestres = await semestreService.excluirSemestre(id, Number(req.params.idSemestre));
+        return resposta.json({ message: 'Semestre excluído', semestres });
+    } catch (erro) {
+        return responderErro(resposta, erro, 'Erro ao excluir semestre:', 'Erro interno ao excluir o semestre');
     }
 }
