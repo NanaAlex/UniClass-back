@@ -2,6 +2,7 @@ import { Request, Response }       from 'express';
 import pool                        from '../database/connection';
 import { montarDetalhesResposta }  from './formularioController';
 import { buscarAulasDoProfessor }  from './horarioController';
+import { enviarImagem }            from './perfilController';
 
 /*
    Indicadores da listagem (etiquetas e filtros da tela):
@@ -43,6 +44,9 @@ const montarIndicadores = (linha: any) => ({
     solicitouAlteracaoHorario:    linha.alteracao_horario === 1,
 });
 
+// Telefone e versao da foto (resumo MD5): a imagem nunca vai no JSON, tem rota propria
+const CONTATO = `p.telefone, IF(p.foto IS NULL, NULL, MD5(p.foto)) AS foto_versao`;
+
 // RF 6.4: o admin so enxerga professores com vinculo ativo com ele
 async function buscarProfessorVinculado(idAdmin: number, idProfessor: number) {
     if (!Number.isInteger(idProfessor)) {
@@ -52,6 +56,7 @@ async function buscarProfessorVinculado(idAdmin: number, idProfessor: number) {
     const [rows]: any = await pool.query(
         `SELECT u.id_usuario, u.nome, u.email, u.ativo,
                 p.carga_horaria_semanal, p.titulacao, v.data_vinculo,
+                ${CONTATO},
                 ${INDICADORES}
            FROM vinculo_professor_admin v
            JOIN usuario u   ON u.id_usuario = v.id_professor
@@ -83,9 +88,11 @@ export async function listarProfessores(req: Request, resposta: Response) {
     try {
         const [rows]: any = await pool.query(
             `SELECT u.id_usuario, u.nome, u.email, u.ativo,
+                    ${CONTATO},
                     ${INDICADORES}
                FROM vinculo_professor_admin v
-               JOIN usuario u ON u.id_usuario = v.id_professor
+               JOIN usuario u   ON u.id_usuario = v.id_professor
+               JOIN professor p ON p.id_usuario = v.id_professor
               WHERE v.id_admin = ?
                 AND v.ativo = TRUE
                 AND (u.nome LIKE ? OR u.email LIKE ?)
@@ -99,6 +106,8 @@ export async function listarProfessores(req: Request, resposta: Response) {
             nome: linha.nome,
             email: linha.email,
             ativo: linha.ativo === 1,
+            telefone: linha.telefone,
+            fotoVersao: linha.foto_versao,
             ...montarIndicadores(linha),
         }));
 
@@ -152,6 +161,8 @@ export async function dadosProfessor(req: Request, resposta: Response) {
                 ativo: professor.ativo === 1,
                 cargaHorariaSemanal: Number(professor.carga_horaria_semanal),
                 titulacao: professor.titulacao,
+                telefone: professor.telefone,
+                fotoVersao: professor.foto_versao,
                 dataVinculo: professor.data_vinculo,
                 ...montarIndicadores(professor),
             },
@@ -169,6 +180,38 @@ export async function dadosProfessor(req: Request, resposta: Response) {
     } catch (error) {
         console.error('Erro ao buscar professor:', error);
         return resposta.status(500).json({ error: 'Erro interno ao buscar o professor' });
+    }
+}
+
+// Foto informada pelo professor (task 20): so de professor com vinculo ativo; sem foto, a mesma 404
+export async function fotoProfessor(req: Request, resposta: Response) {
+    const { id } = resposta.locals.usuario;
+    const idProfessor = Number(req.params.idProfessor);
+
+    if (!Number.isInteger(idProfessor)) {
+        return resposta.status(404).json({ error: 'Foto não encontrada' });
+    }
+
+    try {
+        const [rows]: any = await pool.query(
+            `SELECT p.foto, p.foto_tipo
+               FROM vinculo_professor_admin v
+               JOIN professor p ON p.id_usuario = v.id_professor
+              WHERE v.id_admin = ?
+                AND v.id_professor = ?
+                AND v.ativo = TRUE
+                AND p.foto IS NOT NULL`,
+            [id, idProfessor]
+        );
+
+        if (rows.length === 0) {
+            return resposta.status(404).json({ error: 'Foto não encontrada' });
+        }
+
+        return enviarImagem(resposta, rows[0].foto, rows[0].foto_tipo);
+    } catch (error) {
+        console.error('Erro ao buscar a foto do professor:', error);
+        return resposta.status(500).json({ error: 'Erro interno ao buscar a foto' });
     }
 }
 

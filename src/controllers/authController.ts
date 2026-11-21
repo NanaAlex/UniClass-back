@@ -168,7 +168,11 @@ export async function usuarioLogado(req: Request, resposta: Response) {
 
   try {
     const [rows]: any = await pool.query(
-      'SELECT id_usuario, nome, email, tipo_usuario FROM usuario WHERE id_usuario = ?',
+      `SELECT u.id_usuario, u.nome, u.email, u.tipo_usuario,
+              IF(p.foto IS NULL, NULL, MD5(p.foto)) AS foto_versao
+         FROM usuario u
+         LEFT JOIN professor p ON p.id_usuario = u.id_usuario
+        WHERE u.id_usuario = ?`,
       [id]
     );
 
@@ -180,6 +184,7 @@ export async function usuarioLogado(req: Request, resposta: Response) {
         nome: usuario.nome,
         email: usuario.email,
         tipoUsuario: usuario.tipo_usuario,
+        fotoVersao: usuario.foto_versao, // so o professor tem foto; admin: null
       },
     });
 
