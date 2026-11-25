@@ -11,7 +11,15 @@ dotenv.config();
 const aplicacao = express();
 const PORTA = process.env.PORT || 3333;
 
-aplicacao.use(cors());
+// CORS_ORIGINS: lista de origens permitidas, separadas por vírgula
+// (ex.: https://uniclass.vercel.app). Sem a variável, libera qualquer origem,
+// como no desenvolvimento local.
+const origensPermitidas = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((origem) => origem.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+aplicacao.use(cors(origensPermitidas.length ? { origin: origensPermitidas } : undefined));
 aplicacao.use(express.json());
 
 // -- Rotas
