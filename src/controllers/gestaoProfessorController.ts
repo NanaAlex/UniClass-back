@@ -44,8 +44,8 @@ const montarIndicadores = (linha: any) => ({
     solicitouAlteracaoHorario:    linha.alteracao_horario === 1,
 });
 
-// Telefone e versao da foto (resumo MD5): a imagem nunca vai no JSON, tem rota propria
-const CONTATO = `p.telefone, IF(p.foto IS NULL, NULL, MD5(p.foto)) AS foto_versao`;
+// Telefone e versao da foto (MD5 gravado no envio): a imagem nunca vai no JSON, tem rota propria
+const CONTATO = `p.telefone, p.foto_versao`;
 
 // RF 6.4: o admin so enxerga professores com vinculo ativo com ele
 async function buscarProfessorVinculado(idAdmin: number, idProfessor: number) {
@@ -194,7 +194,7 @@ export async function fotoProfessor(req: Request, resposta: Response) {
 
     try {
         const [rows]: any = await pool.query(
-            `SELECT p.foto, p.foto_tipo
+            `SELECT p.foto, p.foto_tipo, p.foto_versao
                FROM vinculo_professor_admin v
                JOIN professor p ON p.id_usuario = v.id_professor
               WHERE v.id_admin = ?
@@ -208,7 +208,7 @@ export async function fotoProfessor(req: Request, resposta: Response) {
             return resposta.status(404).json({ error: 'Foto não encontrada' });
         }
 
-        return enviarImagem(resposta, rows[0].foto, rows[0].foto_tipo);
+        return enviarImagem(req, resposta, rows[0]);
     } catch (error) {
         console.error('Erro ao buscar a foto do professor:', error);
         return resposta.status(500).json({ error: 'Erro interno ao buscar a foto' });

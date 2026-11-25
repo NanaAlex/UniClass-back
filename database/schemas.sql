@@ -24,12 +24,13 @@ CREATE TABLE professor (
   id_usuario INT PRIMARY KEY,
   carga_horaria_semanal DECIMAL(5,2) NOT NULL,
   titulacao VARCHAR(255),
-  telefone VARCHAR(20) NULL,
+  telefone VARCHAR(11) NULL,
   foto MEDIUMBLOB NULL,
   foto_tipo VARCHAR(20) NULL,
+  foto_versao CHAR(32) NULL,
   CONSTRAINT fk_professor_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
-  CONSTRAINT ck_professor_telefone CHECK (telefone IS NULL OR telefone REGEXP '^[0-9]{10,20}$'),
-  CONSTRAINT ck_professor_foto CHECK ((foto IS NULL) = (foto_tipo IS NULL)),
+  CONSTRAINT ck_professor_telefone CHECK (telefone IS NULL OR telefone REGEXP '^[1-9]{2}[0-9]{8,9}$'),
+  CONSTRAINT ck_professor_foto CHECK ((foto IS NULL) = (foto_tipo IS NULL) AND (foto IS NULL) = (foto_versao IS NULL)),
   CONSTRAINT ck_professor_foto_tipo CHECK (foto_tipo IS NULL OR foto_tipo IN ('image/jpeg', 'image/png', 'image/webp')),
   CONSTRAINT ck_professor_foto_tamanho CHECK (foto IS NULL OR OCTET_LENGTH(foto) <= 2097152)
 ) ENGINE=InnoDB;

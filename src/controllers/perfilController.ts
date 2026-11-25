@@ -1,11 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
+import { createHash }                      from 'crypto';
 import multer                              from 'multer';
 import pool                                from '../database/connection';
 
 /*
    Perfil do professor (task 20): telefone e foto, informados pelo proprio professor.
    A foto fica no banco (professor.foto, MEDIUMBLOB) e nunca vai no JSON:
-   o JSON traz so a versao (MD5), e a imagem tem rota propria.
+   o JSON traz so a versao (professor.foto_versao, MD5 calculado no envio),
+   e a imagem tem rota propria.
 */
 
 export const TAMANHO_MAXIMO_FOTO = 2 * 1024 * 1024; // 2 MB, o mesmo CHECK do banco
@@ -57,14 +59,35 @@ function tipoDaImagem(arquivo: Buffer): string | null {
     return null;
 }
 
-// Devolve a imagem gravada; a URL do front leva ?v=<fotoVersao>, entao a versao nova tem outra URL
-export function enviarImagem(resposta: Response, foto: Buffer, fotoTipo: string) {
+// Versao da foto: MD5 em hexadecimal, o mesmo valor que o MD5() do MySQL daria
+const calcularVersaoFoto = (foto: Buffer) => createHash('md5').update(foto).digest('hex');
+
+export interface FotoGravada {
+    foto: Buffer;
+    foto_tipo: string;
+    foto_versao: string;
+}
+
+/*
+   Devolve a imagem gravada. A URL do front leva ?v=<fotoVersao>, entao a versao nova tem outra URL.
+   Cache de um ano so quando o ?v= confere com a versao salva: uma aba com a versao antiga
+   pede ?v=<antiga> e, se a foto ja mudou, recebe a nova sem cache, em vez de guarda-la no
+   endereco antigo. Fora isso, o navegador revalida pelo ETag (304 sem reenviar a imagem).
+*/
+export function enviarImagem(req: Request, resposta: Response, { foto, foto_tipo, foto_versao }: FotoGravada) {
+    const mesmaVersao = req.query.v === foto_versao;
+
     resposta.set({
-        'Content-Type': fotoTipo,
-        'Content-Length': String(foto.length),
-        'Cache-Control': 'private, max-age=31536000, immutable',
+        'ETag': `"${foto_versao}"`,
+        'Cache-Control': mesmaVersao ? 'private, max-age=31536000, immutable' : 'private, no-cache',
         'X-Content-Type-Options': 'nosniff',
     });
+
+    if (req.fresh) {
+        return resposta.status(304).end();
+    }
+
+    resposta.set({ 'Content-Type': foto_tipo, 'Content-Length': String(foto.length) });
     return resposta.end(foto);
 }
 
@@ -72,8 +95,7 @@ async function buscarPerfil(idProfessor: number) {
     // Dados do professor e coordenacoes com vinculo ativo: consultas independentes, vao juntas ao banco
     const [[rows], [vinculos]]: any = await Promise.all([
         pool.query(
-            `SELECT u.id_usuario, u.nome, u.email, p.telefone,
-                    IF(p.foto IS NULL, NULL, MD5(p.foto)) AS foto_versao
+            `SELECT u.id_usuario, u.nome, u.email, p.telefone, p.foto_versao
                FROM usuario u
                JOIN professor p ON p.id_usuario = u.id_usuario
               WHERE u.id_usuario = ?`,
@@ -110,7 +132,11 @@ async function buscarPerfil(idProfessor: number) {
     };
 }
 
-// null = apagar; senao, so os digitos (10 a 20, o mesmo CHECK do banco)
+// DDD (dois digitos de 1 a 9, ex.: 11, 21) + numero de 8 ou 9 digitos: 10 ou 11 no total.
+// O mesmo CHECK do banco (ck_professor_telefone) e a mesma regra da tela.
+const TELEFONE_VALIDO = /^[1-9]{2}[0-9]{8,9}$/;
+
+// null = apagar; senao, so os digitos
 function validarCorpoTelefone(corpo: any): { erro: string | null; telefone: string | null } {
     if (!corpo || typeof corpo !== 'object' || !('telefone' in corpo)) {
         return { erro: 'Informe o telefone (ou null para apagar)', telefone: null };
@@ -128,8 +154,14 @@ function validarCorpoTelefone(corpo: any): { erro: string | null; telefone: stri
     if (digitos === '') {
         return { erro: null, telefone: null };
     }
-    if (!/^[0-9]{10,20}$/.test(digitos)) {
-        return { erro: 'Telefone inválido: informe DDD e número (de 10 a 20 dígitos)', telefone: null };
+    if (!/^[0-9]+$/.test(digitos)) {
+        return { erro: 'Telefone inválido: use apenas números, com DDD', telefone: null };
+    }
+    if (!TELEFONE_VALIDO.test(digitos)) {
+        return {
+            erro: 'Telefone inválido: informe DDD e número, com 10 ou 11 dígitos (ex.: 11987654321), sem o +55',
+            telefone: null,
+        };
     }
 
     return { erro: null, telefone: digitos };
@@ -188,8 +220,8 @@ export async function atualizarFoto(req: Request, resposta: Response) {
 
     try {
         await pool.query(
-            'UPDATE professor SET foto = ?, foto_tipo = ? WHERE id_usuario = ?',
-            [req.file.buffer, fotoTipo, id]
+            'UPDATE professor SET foto = ?, foto_tipo = ?, foto_versao = ? WHERE id_usuario = ?',
+            [req.file.buffer, fotoTipo, calcularVersaoFoto(req.file.buffer), id]
         );
 
         return resposta.json({ message: 'Foto atualizada', perfil: await buscarPerfil(id) });
@@ -205,7 +237,7 @@ export async function removerFoto(req: Request, resposta: Response) {
 
     try {
         const [resultado]: any = await pool.query(
-            `UPDATE professor SET foto = NULL, foto_tipo = NULL
+            `UPDATE professor SET foto = NULL, foto_tipo = NULL, foto_versao = NULL
               WHERE id_usuario = ? AND foto IS NOT NULL`,
             [id]
         );
@@ -227,7 +259,7 @@ export async function verFoto(req: Request, resposta: Response) {
 
     try {
         const [rows]: any = await pool.query(
-            'SELECT foto, foto_tipo FROM professor WHERE id_usuario = ? AND foto IS NOT NULL',
+            'SELECT foto, foto_tipo, foto_versao FROM professor WHERE id_usuario = ? AND foto IS NOT NULL',
             [id]
         );
 
@@ -235,7 +267,7 @@ export async function verFoto(req: Request, resposta: Response) {
             return resposta.status(404).json({ error: 'Foto não encontrada' });
         }
 
-        return enviarImagem(resposta, rows[0].foto, rows[0].foto_tipo);
+        return enviarImagem(req, resposta, rows[0]);
 
     } catch (error) {
         console.error('Erro ao buscar a foto:', error);

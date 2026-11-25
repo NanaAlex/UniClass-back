@@ -169,7 +169,7 @@ export async function usuarioLogado(req: Request, resposta: Response) {
   try {
     const [rows]: any = await pool.query(
       `SELECT u.id_usuario, u.nome, u.email, u.tipo_usuario,
-              IF(p.foto IS NULL, NULL, MD5(p.foto)) AS foto_versao
+              p.foto_versao
          FROM usuario u
          LEFT JOIN professor p ON p.id_usuario = u.id_usuario
         WHERE u.id_usuario = ?`,
