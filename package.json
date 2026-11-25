@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Backend API - Express + TypeScript + MySQL",
   "main": "dist/server.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "nodemon src/server.ts",
     "build": "tsc",

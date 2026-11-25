@@ -131,10 +131,27 @@ A sessão expira depois de **1 hora sem uso** e é encerrada no logout, na troca
 | SMTP_USER   | Usuário do e-mail                                                |                         |
 | SMTP_PASS   | Senha do e-mail (no Gmail, use uma "senha de app")               |                         |
 | SMTP_FROM   | Remetente dos e-mails                                            | o mesmo do SMTP_USER    |
+| CORS_ORIGINS | Origens que podem chamar a API, separadas por vírgula (ex.: `https://uniclass.vercel.app`) | vazio = qualquer origem |
 
 No `.env`, escreva os comentários sempre em linha separada, nunca depois do valor.
 
 **E-mails sem SMTP:** se `SMTP_HOST` ficar vazio, os e-mails vão para uma caixa de teste do [Ethereal](https://ethereal.email/). Eles não chegam de verdade: o link para ver cada e-mail aparece no terminal onde o back está rodando. Esse modo precisa de internet.
+
+## Deploy (Azure App Service)
+
+A API roda no Azure App Service e usa o mesmo Flexible Server do banco.
+
+1. **Banco de produção:** crie um banco separado do de desenvolvimento (ex.: `staggy_prod`) no mesmo servidor. Para criar as tabelas, rode o `database/schemas.sql` trocando `staggy_dev` por `staggy_prod` nas duas primeiras linhas. ⚠️ Confira o nome antes de executar.
+2. **Firewall do banco:** no Flexible Server, em *Rede*, marque "Permitir acesso público de qualquer serviço do Azure".
+3. **App Service:** crie um Web App Linux com **Node 22 LTS**, na mesma região do banco. Use o plano **B1** ou superior com **Always On** ligado, porque a agenda dos formulários (`iniciarAgendaFormularios`) roda dentro do processo e para quando o app hiberna. O plano F1 hiberna.
+4. **Configuração do App Service:**
+   - *Variáveis de ambiente*: `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME=staggy_prod`, `DB_SSL=true`, `APP_URL` (URL do front), `CORS_ORIGINS` (URL do front) e as `SMTP_*`. Não defina `PORT`, porque o Azure define sozinho.
+   - *Configuração geral > Comando de inicialização*: `npm start`.
+5. **GitHub Actions:** o workflow `.github/workflows/deploy-azure.yml` publica a cada push na `main`, ou manualmente pela aba *Actions*. Antes, cadastre no repositório (*Settings > Secrets and variables > Actions*):
+   - a variável `AZURE_WEBAPP_NAME`, com o nome do App Service;
+   - o secret `AZURE_WEBAPP_PUBLISH_PROFILE`, com o conteúdo do perfil de publicação (*Visão geral > Baixar perfil de publicação*). Se o download estiver bloqueado, ative *Configuração > Credenciais de publicação básica do SCM*.
+
+Para testar, acesse a URL do App Service: a rota `/` responde `{"message":"API está rodando"}`.
 
 ## 🔧 Solução de problemas
 
