@@ -19,7 +19,7 @@ https://drive.google.com/drive/folders/11swJExn4jfPuFHDg00saQOlSUQaMkUy3?usp=dri
 
 ### Pré-requisitos
 - Node.js 18+
-- MySQL 8.0.16+ rodando (no Windows, confira se o serviço do MySQL está iniciado)
+- IP liberado no firewall do banco do Azure (peça à responsável pelo banco)
 
 ### Instalação
 
@@ -38,8 +38,10 @@ cp .env.example .env
 
 ### Banco de dados
 
-- **Banco novo:** rode o `database/schemas.sql` inteiro no MySQL Workbench. Ele cria o banco `staggy_dev` com todas as tabelas.
-- **Banco criado antes das últimas mudanças:** rode as migrations da pasta `database/migrations`, em ordem (`001`, `002`, `003`, `004`). Cada uma deve ser aplicada uma única vez.
+O banco de desenvolvimento (`staggy_dev`) é **compartilhado** e fica hospedado no Azure. Não é preciso instalar MySQL localmente: basta preencher o `.env` com os dados do Azure (veja o guia de configuração do ambiente, enviado à equipe).
+
+- **Alterações na estrutura** (novas tabelas, colunas etc.) vão em `database/migrations`, com o próximo número da sequência. Cada migration é rodada **uma única vez, por uma única pessoa**, no MySQL Workbench, na conexão do Azure. Avise a equipe antes de rodar.
+- **`database/schemas.sql`**: documenta a estrutura completa e serve só para criar um banco **local** do zero. ⚠️ **Nunca rode esse arquivo no banco do Azure**, pois ele recria o banco e pode apagar os dados de todos.
 
 ### Rodar
 
@@ -122,16 +124,34 @@ A sessão expira depois de **1 hora sem uso** e é encerrada no logout, na troca
 | DB_USER     | Usuário do banco                                                 | root                    |
 | DB_PASS     | Senha do banco                                                   |                         |
 | DB_NAME     | Nome do banco                                                    | staggy_dev              |
+| DB_SSL      | Ativa SSL na conexão (obrigatório no Azure)                      | `true` no Azure, vazio no MySQL local |
 | APP_URL     | Endereço do front-end, usado no link do convite                  | http://localhost:3000   |
 | SMTP_HOST   | Servidor de e-mail (ex.: `smtp.gmail.com`)                       |                         |
 | SMTP_PORT   | Porta do servidor de e-mail                                      | 465                     |
 | SMTP_USER   | Usuário do e-mail                                                |                         |
 | SMTP_PASS   | Senha do e-mail (no Gmail, use uma "senha de app")               |                         |
 | SMTP_FROM   | Remetente dos e-mails                                            | o mesmo do SMTP_USER    |
+| CORS_ORIGINS | Origens que podem chamar a API, separadas por vírgula (ex.: `https://uniclass.vercel.app`) | vazio = qualquer origem |
 
 No `.env`, escreva os comentários sempre em linha separada, nunca depois do valor.
 
 **E-mails sem SMTP:** se `SMTP_HOST` ficar vazio, os e-mails vão para uma caixa de teste do [Ethereal](https://ethereal.email/). Eles não chegam de verdade: o link para ver cada e-mail aparece no terminal onde o back está rodando. Esse modo precisa de internet.
+
+## Deploy (Azure App Service)
+
+A API roda no Azure App Service e usa o mesmo Flexible Server do banco.
+
+1. **Banco de produção:** crie um banco separado do de desenvolvimento (ex.: `staggy_prod`) no mesmo servidor. Para criar as tabelas, rode o `database/schemas.sql` trocando `staggy_dev` por `staggy_prod` nas duas primeiras linhas. ⚠️ Confira o nome antes de executar.
+2. **Firewall do banco:** no Flexible Server, em *Rede*, marque "Permitir acesso público de qualquer serviço do Azure".
+3. **App Service:** crie um Web App Linux com **Node 22 LTS**, na mesma região do banco. Use o plano **B1** ou superior com **Always On** ligado, porque a agenda dos formulários (`iniciarAgendaFormularios`) roda dentro do processo e para quando o app hiberna. O plano F1 hiberna.
+4. **Configuração do App Service:**
+   - *Variáveis de ambiente*: `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME=staggy_prod`, `DB_SSL=true`, `APP_URL` (URL do front), `CORS_ORIGINS` (URL do front) e as `SMTP_*`. Não defina `PORT`, porque o Azure define sozinho.
+   - *Configuração geral > Comando de inicialização*: `npm start`.
+5. **GitHub Actions:** o workflow `.github/workflows/deploy-azure.yml` publica a cada push na `main`, ou manualmente pela aba *Actions*. Antes, cadastre no repositório (*Settings > Secrets and variables > Actions*):
+   - a variável `AZURE_WEBAPP_NAME`, com o nome do App Service;
+   - o secret `AZURE_WEBAPP_PUBLISH_PROFILE`, com o conteúdo do perfil de publicação (*Visão geral > Baixar perfil de publicação*). Se o download estiver bloqueado, ative *Configuração > Credenciais de publicação básica do SCM*.
+
+Para testar, acesse a URL do App Service: a rota `/` responde `{"message":"API está rodando"}`.
 
 ## 🔧 Solução de problemas
 
@@ -141,3 +161,6 @@ No `.env`, escreva os comentários sempre em linha separada, nunca depois do val
 | `EADDRINUSE` na porta 3333 | Já existe um back rodando em outro terminal | Feche o outro com `Ctrl + C` |
 | `No database selected` no Workbench | Banco não selecionado | Comece o script com `USE staggy_dev;` |
 | Acentos viram `�` nos testes com `curl` | O terminal UCRT64 não envia em UTF-8 | Nos testes pelo terminal, escreva sem acento |
+| `Access denied for user 'equipe'@'localhost'` | O back está conectando no MySQL local | Deixe uma única linha `DB_HOST` no `.env`, com o endereço do Azure, e reinicie |
+| `Connections using insecure transport are prohibited` | SSL desligado | Confira `DB_SSL=true` no `.env` e reinicie |
+| `ETIMEDOUT` ao conectar no banco | IP não liberado no firewall do Azure | Peça a liberação do seu IP atual |

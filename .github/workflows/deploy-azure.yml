@@ -1,0 +1,40 @@
+# Deploy da API no Azure App Service (Linux, Node 22).
+# Configuração necessária no GitHub (Settings > Secrets and variables > Actions):
+#   - Variable AZURE_WEBAPP_NAME: nome do App Service
+#   - Secret   AZURE_WEBAPP_PUBLISH_PROFILE: conteúdo do perfil de publicação
+#     (portal do App Service > Visão geral > Baixar perfil de publicação)
+name: Deploy API no Azure
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências e compilar
+        run: |
+          npm ci
+          npm run build
+
+      - name: Remover dependências de desenvolvimento
+        run: npm prune --omit=dev
+
+      - name: Empacotar
+        run: zip -r -q app.zip dist node_modules package.json package-lock.json
+
+      - name: Publicar no App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: app.zip

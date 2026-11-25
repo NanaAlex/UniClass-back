@@ -2,10 +2,16 @@ import { Router } from "express";
 import { verificarSessao, somenteAdministrador } from "../middlewares/autenticacao";
 
 import { listarBlocos, criarBloco, editarBloco, alterarTamanhoBlocos, excluirBloco } from "../controllers/blocoController";
-import { listarDias, adicionarDia, excluirDia }                                     from "../controllers/diaLetivoController";
-import { listarSemestres, criarSemestre, excluirSemestre }                          from "../controllers/semestreController";
+import { listarDias, adicionarDia, excluirDia }                                      from "../controllers/diaLetivoController";
+import { listarSemestres, criarSemestre, excluirSemestre }                           from "../controllers/semestreController";
+import { convidarProfessores }                                                        from "../controllers/conviteController";
+import {
+  listarProfessores, dadosProfessor, verRespostaProfessor, verHorarioProfessor, listarSolicitacoesProfessor,
+  verSolicitacaoFormulario, decidirSolicitacaoFormulario, alterarStatusConta,
+} from "../controllers/gestaoProfessorController";
 import { adicionarTurma, alterarTurnoTurma, retirarTurma }                          from "../controllers/turmaController";
 import { listarMaterias, criarMateria, editarMateria, excluirMateria }              from "../controllers/materiaController";
+import { lerDados, salvarDados }                                                     from "../controllers/dadosController";
 import { listarFormulariosDoAdmin, lancarFormulario, editarDatasFormulario,
          abrirFormulario, encerrarFormulario, listarProfessoresDoFormulario }                                      from "../controllers/publicacaoController"
 
@@ -14,6 +20,10 @@ const router = Router();
 
 // Protecao
 router.use(verificarSessao, somenteAdministrador);
+
+// aba Dados inteira (tela "Dados do curso")
+router.get('/dados', lerDados);
+router.put('/dados', salvarDados);
 
 // dias letivos
 router.get('/turnos/:turno/dias', listarDias);
@@ -32,6 +42,20 @@ router.get('/semestres', listarSemestres);
 router.post('/semestres', criarSemestre);
 router.delete('/semestres/:idSemestre', excluirSemestre);
 
+// gestao de professores
+router.get('/professores', listarProfessores);
+router.get('/professores/:idProfessor', dadosProfessor);
+router.get('/professores/:idProfessor/formularios/:idFormulario/resposta', verRespostaProfessor);
+router.get('/professores/:idProfessor/horario', verHorarioProfessor);
+router.get('/professores/:idProfessor/solicitacoes', listarSolicitacoesProfessor);
+
+router.post('/convites', convidarProfessores);
+
+router.put('/professores/:idProfessor/status', alterarStatusConta);
+
+// solicitacoes de alteracao do formulario
+router.get('/solicitacoes/formulario/:idSolicitacao', verSolicitacaoFormulario);
+router.put('/solicitacoes/formulario/:idSolicitacao', decidirSolicitacaoFormulario);
 // turmas do semestre
 router.post('/semestres/:idSemestre/turmas', adicionarTurma);
 router.put('/turmas/:idTurma', alterarTurnoTurma);

@@ -3,28 +3,107 @@ import bcrypt                from 'bcryptjs';
 import crypto                from 'crypto';
 import pool                  from '../database/connection';
 import { senhaValida }       from '../utils/validacoes';
+import { buscarConvitePendente, MENSAGEM_CONVITE_INVALIDO } from './conviteController';
 
+// CU-006: a conta de professor so e criada a partir de um convite de CRIACAO_CONTA
 export async function registro(req: Request, resposta: Response) {
-  const { email, senha } = req.body;
+  const { token, nome, senha, confirmacaoSenha, cargaHorariaSemanal, titulacao } = req.body;
 
-  if (!email || !senha) {
-    return resposta.status(400).json({ error: 'Preencha email e senha' });
+  if (!token || !nome || !senha || !confirmacaoSenha || cargaHorariaSemanal === undefined) {
+    return resposta.status(400).json({ error: 'Preencha todos os campos obrigatórios' });
+  }
+
+  if (typeof nome !== 'string' || nome.trim() === '' || nome.trim().length > 255) {
+    return resposta.status(400).json({ error: 'Informe um nome com até 255 caracteres' });
+  }
+
+  if (senha !== confirmacaoSenha) {
+    return resposta.status(400).json({ error: 'A confirmação não corresponde à senha' });
+  }
+
+  if (!senhaValida(senha)) {
+    return resposta.status(400).json({
+      error: 'A senha deve ter no mínimo 8 caracteres, com letra maiúscula, minúscula, número e caractere especial',
+    });
+  }
+
+  // RN-32: limite legal de 44 horas semanais
+  const carga = Number(cargaHorariaSemanal);
+  if (!(carga > 0 && carga <= 44)) {
+    return resposta.status(400).json({ error: 'A carga horária semanal deve ser maior que 0 e de no máximo 44 horas' });
+  }
+
+  if (titulacao !== undefined && titulacao !== null && (typeof titulacao !== 'string' || titulacao.length > 255)) {
+    return resposta.status(400).json({ error: 'A titulação deve ter no máximo 255 caracteres' });
   }
 
   try {
-    const senhaHash = await bcrypt.hash(senha, 10);
+    const convite = await buscarConvitePendente(String(token));
 
-    await pool.query(
-      'INSERT INTO professores (email, senha) VALUES (?, ?)',
-      [email, senhaHash]
-    );
-
-    return resposta.status(201).json({ message: 'Professor cadastrado com sucesso' });
-    
-  } catch (error: any) {
-    if (error.code === 'ER_DUP_ENTRY') {
-      return resposta.status(409).json({ error: 'Email já existe' });
+    if (!convite || convite.tipo_convite !== 'CRIACAO_CONTA') {
+      return resposta.status(404).json({ error: MENSAGEM_CONVITE_INVALIDO });
     }
+
+    const senhaHash = await bcrypt.hash(senha, 10);
+    const conexao   = await pool.getConnection();
+
+    try {
+      await conexao.beginTransaction();
+
+      // Marca o convite primeiro: link de uso unico (RNF 8)
+      const [usoConvite]: any = await conexao.query(
+        `UPDATE convite_professor
+            SET status = 'ACEITO', data_aceite = NOW()
+          WHERE id_convite = ? AND status = 'PENDENTE'`,
+        [convite.id_convite]
+      );
+
+      if (usoConvite.affectedRows === 0) {
+        await conexao.rollback();
+        return resposta.status(404).json({ error: MENSAGEM_CONVITE_INVALIDO });
+      }
+
+      const [novoUsuario]: any = await conexao.query(
+        `INSERT INTO usuario (nome, email, senha_hash, tipo_usuario, ativo, data_criacao)
+         VALUES (?, ?, ?, 'PROFESSOR', TRUE, NOW())`,
+        [nome.trim(), convite.email_destino, senhaHash]
+      );
+      const idProfessor = novoUsuario.insertId;
+
+      await conexao.query(
+        'INSERT INTO professor (id_usuario, carga_horaria_semanal, titulacao) VALUES (?, ?, ?)',
+        [idProfessor, carga, titulacao ? titulacao.trim() : null]
+      );
+
+      await conexao.query(
+        `INSERT INTO vinculo_professor_admin (id_admin, id_professor, ativo, data_vinculo)
+         VALUES (?, ?, TRUE, NOW())`,
+        [convite.id_admin, idProfessor]
+      );
+
+      await conexao.query(
+        'UPDATE convite_professor SET id_professor = ? WHERE id_convite = ?',
+        [idProfessor, convite.id_convite]
+      );
+
+      await conexao.commit();
+    } catch (error) {
+      await conexao.rollback();
+      throw error;
+    } finally {
+      conexao.release();
+    }
+
+    return resposta.status(201).json({ message: 'Conta criada com sucesso' });
+
+  } catch (error: any) {
+    // CU-006 A3: o e-mail ganhou conta depois do convite
+    if (error.code === 'ER_DUP_ENTRY') {
+      return resposta.status(409).json({
+        error: 'Já existe uma conta com este e-mail. Peça ao administrador um convite de vínculo',
+      });
+    }
+    console.error('Erro ao cadastrar professor:', error);
     return resposta.status(500).json({ error: 'Erro ao cadastrar professor' });
   }
 }
