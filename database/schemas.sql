@@ -24,7 +24,14 @@ CREATE TABLE professor (
   id_usuario INT PRIMARY KEY,
   carga_horaria_semanal DECIMAL(5,2) NOT NULL,
   titulacao VARCHAR(255),
-  CONSTRAINT fk_professor_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+  telefone VARCHAR(20) NULL,
+  foto MEDIUMBLOB NULL,
+  foto_tipo VARCHAR(20) NULL,
+  CONSTRAINT fk_professor_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
+  CONSTRAINT ck_professor_telefone CHECK (telefone IS NULL OR telefone REGEXP '^[0-9]{10,20}$'),
+  CONSTRAINT ck_professor_foto CHECK ((foto IS NULL) = (foto_tipo IS NULL)),
+  CONSTRAINT ck_professor_foto_tipo CHECK (foto_tipo IS NULL OR foto_tipo IN ('image/jpeg', 'image/png', 'image/webp')),
+  CONSTRAINT ck_professor_foto_tamanho CHECK (foto IS NULL OR OCTET_LENGTH(foto) <= 2097152)
 ) ENGINE=InnoDB;
 
 CREATE TABLE vinculo_professor_admin (
@@ -283,6 +290,8 @@ CREATE TABLE solicitacao_alteracao_horario (
   motivo VARCHAR(500) NOT NULL,
   data_envio DATETIME NOT NULL,
   status ENUM('PENDENTE','APROVADA','REJEITADA','CANCELADA') NULL,
+  data_leitura DATETIME NULL,
+  resposta VARCHAR(500) NULL,
   CONSTRAINT fk_solic_horario_professor FOREIGN KEY (id_professor) REFERENCES professor(id_usuario),
   CONSTRAINT fk_solic_horario_geracao FOREIGN KEY (id_geracao) REFERENCES geracao_horario(id_geracao),
   CONSTRAINT fk_solic_horario_aula FOREIGN KEY (id_aula) REFERENCES aula_alocada(id_aula)

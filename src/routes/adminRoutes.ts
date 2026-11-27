@@ -7,7 +7,8 @@ import { listarSemestres, criarSemestre, excluirSemestre }                      
 import { convidarProfessores }                                                        from "../controllers/conviteController";
 import {
   listarProfessores, dadosProfessor, verRespostaProfessor, verHorarioProfessor, listarSolicitacoesProfessor,
-  verSolicitacaoFormulario, decidirSolicitacaoFormulario, alterarStatusConta,
+  verSolicitacaoFormulario, decidirSolicitacaoFormulario, alterarStatusConta, fotoProfessor,
+  marcarSolicitacaoHorarioComoLida,
 } from "../controllers/gestaoProfessorController";
 import { adicionarTurma, alterarTurnoTurma, retirarTurma }                          from "../controllers/turmaController";
 import { listarMaterias, criarMateria, editarMateria, excluirMateria }              from "../controllers/materiaController";
@@ -45,6 +46,7 @@ router.delete('/semestres/:idSemestre', excluirSemestre);
 // gestao de professores
 router.get('/professores', listarProfessores);
 router.get('/professores/:idProfessor', dadosProfessor);
+router.get('/professores/:idProfessor/foto', fotoProfessor);
 router.get('/professores/:idProfessor/formularios/:idFormulario/resposta', verRespostaProfessor);
 router.get('/professores/:idProfessor/horario', verHorarioProfessor);
 router.get('/professores/:idProfessor/solicitacoes', listarSolicitacoesProfessor);
@@ -56,6 +58,7 @@ router.put('/professores/:idProfessor/status', alterarStatusConta);
 // solicitacoes de alteracao do formulario
 router.get('/solicitacoes/formulario/:idSolicitacao', verSolicitacaoFormulario);
 router.put('/solicitacoes/formulario/:idSolicitacao', decidirSolicitacaoFormulario);
+router.put('/solicitacoes/horario/:idSolicitacao/lida', marcarSolicitacaoHorarioComoLida);
 // turmas do semestre
 router.post('/semestres/:idSemestre/turmas', adicionarTurma);
 router.put('/turmas/:idTurma', alterarTurnoTurma);

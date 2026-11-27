@@ -3,6 +3,7 @@ import { verificarSessao, somenteProfessor } from "../middlewares/autenticacao";
 import { solicitarAlteracaoFormulario, listarSolicitacoesFormulario, solicitarAlteracaoHorario, listarSolicitacoesHorario }      from "../controllers/solicitacaoController";
 import { listarFormularios, formularioAtual, dadosDoFormulario, enviarResposta, verResposta} from "../controllers/formularioController";
 import { verPreviaHorario, verHorarioDefinitivo, listarEstruturasDoProfessor } from "../controllers/horarioController";
+import { verPerfil, atualizarTelefone, receberFoto, atualizarFoto, removerFoto, verFoto } from "../controllers/perfilController";
 
 const router = Router();
 
@@ -31,5 +32,12 @@ router.get('/horario/estruturas', listarEstruturasDoProfessor);
 router.post('/formularios/:idFormulario/resposta', enviarResposta);
 router.post('/formularios/:idFormulario/solicitacoes', solicitarAlteracaoFormulario);
 router.post('/horario/solicitacoes', solicitarAlteracaoHorario);
+
+// Perfil (telefone e foto)
+router.get('/perfil', verPerfil);
+router.put('/perfil', atualizarTelefone);
+router.get('/perfil/foto', verFoto);
+router.put('/perfil/foto', receberFoto, atualizarFoto);
+router.delete('/perfil/foto', removerFoto);
 
 export default router;
